@@ -366,8 +366,8 @@ export default function ThreeWayMerge({
   return (
     <div className="three-way-merge">
       <div className="twm-toolbar">
-        <Button variant="ghost" size="sm" onClick={revertAll}>← 全部原稿</Button>
-        <Button variant="ghost" size="sm" onClick={applyAll}>全部修稿 →</Button>
+        <Button variant="outline" size="sm" onClick={revertAll}>← 全部原稿</Button>
+        <Button variant="outline" size="sm" onClick={applyAll}>全部修稿 →</Button>
         <span className="twm-toolbar-progress">已采用 {processedCount}/{hunks.length} 处变更</span>
         {onCancel && <Button variant="ghost" size="sm" onClick={onCancel}>取消</Button>}
         <Button variant="success" size="sm" onClick={() => onComplete(buildMergedText())}>完成合并</Button>
