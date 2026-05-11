@@ -1,14 +1,15 @@
-import { Sparkles, FolderOpen, Clock, BookOpen, FileUp } from 'lucide-react'
+import { Sparkles, FolderOpen, Clock, BookOpen, FileUp, FileArchive } from 'lucide-react'
 import { useProjectStore } from '../../stores/project-store'
 
 interface WelcomePageProps {
   onNewProject: () => void
   onOpenProject: () => void
+  onImportProject: () => void
   onImportNovel?: () => void
 }
 
 /** 欢迎页面 — 无项目打开时显示 */
-export default function WelcomePage({ onNewProject, onOpenProject, onImportNovel }: WelcomePageProps) {
+export default function WelcomePage({ onNewProject, onOpenProject, onImportProject, onImportNovel }: WelcomePageProps) {
   const recentProjects = useProjectStore(s => s.recentProjects)
   const openProject = useProjectStore(s => s.openProject)
   const currentProject = useProjectStore(s => s.currentProject)
@@ -95,6 +96,36 @@ export default function WelcomePage({ onNewProject, onOpenProject, onImportNovel
             </span>
             <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
               打开已有 Vela 项目
+            </span>
+          </button>
+
+          <button
+            onClick={onImportProject}
+            className="group flex flex-col items-center gap-2.5 p-5 rounded-xl transition-all hover:scale-[1.02]"
+            style={{
+              backgroundColor: 'var(--color-sidebar)',
+              border: '1px solid var(--color-border)',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.borderColor = 'rgba(126, 200, 227, 0.4)'
+              e.currentTarget.style.boxShadow = '0 4px 20px rgba(126, 200, 227, 0.10)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.borderColor = 'var(--color-border)'
+              e.currentTarget.style.boxShadow = 'none'
+            }}
+          >
+            <div
+              className="flex items-center justify-center w-10 h-10 rounded-xl transition-transform group-hover:scale-105"
+              style={{ backgroundColor: 'rgba(126, 200, 227, 0.12)', color: 'rgb(126, 200, 227)' }}
+            >
+              <FileArchive size={20} />
+            </div>
+            <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+              导入项目
+            </span>
+            <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+              导入 Vela 项目备份
             </span>
           </button>
 

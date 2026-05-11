@@ -1,9 +1,11 @@
 import { useEffect } from 'react'
-import { Sun, Moon, ScrollText, Settings, ZoomIn, ZoomOut, Sparkles } from 'lucide-react'
+import { Sun, Moon, ScrollText, Settings, ZoomIn, ZoomOut, Sparkles, Download } from 'lucide-react'
 import { useProjectStore } from '../../stores/project-store'
 import { useThemeStore, type Theme } from '../../stores/theme-store'
 import { useEditorStore } from '../../stores/editor-store'
 import { useLayoutStore } from '../../stores/layout-store'
+import { ipc } from '../../services/ipc-client'
+import { toast } from '../ui/Toast'
 
 /** 检测是否为 macOS */
 const isMac = navigator.userAgent.includes('Mac')
@@ -19,10 +21,23 @@ const themeOrder: Theme[] = ['galaxy', 'dark', 'light', 'paper']
 /** 标题栏组件 — JetBrains 风格：36px 高，含缩放控制 */
 export default function TitleBar() {
   const projectName = useProjectStore((s) => s.currentProject?.name)
+  const projectPath = useProjectStore((s) => s.currentProject?.path)
   const { theme, setTheme } = useThemeStore()
   const { zoom, zoomIn, zoomOut, zoomReset } = useThemeStore()
-  // 是否有未保存的文档（任意 dirty tab）
   const hasDirty = useEditorStore((s) => s.tabs.some((t) => t.dirty))
+
+  const handleExportProject = async () => {
+    if (!projectPath) return
+    const targetDir = await ipc.invoke('dialog:select-folder')
+    if (!targetDir) return
+    toast.info('正在导出项目...')
+    const result = await ipc.invoke('project:export', projectPath, targetDir) as { success: boolean; exportPath?: string; error?: string }
+    if (result.success && result.exportPath) {
+      toast.success(`项目已导出至:\n${result.exportPath}`)
+    } else {
+      toast.error(`导出失败: ${result.error}`)
+    }
+  }
 
   const ThemeIcon = themeIcons[theme] || Sun
   const cycleTheme = (e: React.MouseEvent) => {
@@ -200,6 +215,18 @@ export default function TitleBar() {
         >
           <ThemeIcon size={13} strokeWidth={1.5} />
         </button>
+
+        {/* 导出项目 */}
+        {projectName && (
+          <button
+            onClick={handleExportProject}
+            title="导出项目备份"
+            className="icon-btn"
+            style={{ width: 24, height: 22 }}
+          >
+            <Download size={13} strokeWidth={1.5} />
+          </button>
+        )}
 
         {/* 设置 */}
         <button

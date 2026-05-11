@@ -51,7 +51,8 @@ export class ImportInitializeCommand extends BaseWorkflowCommand<void> {
         source: 'write'
       })
 
-      if (i % 10 === 0) {
+      // 减少进度更新频率：每 20 章更新一次
+      if (i % 20 === 0) {
         callbacks.setProgress(5 + Math.round((i / this.chapters.length) * 40))
         callbacks.log(`  ✍️ 已导入第 ${ch.number} 章（${ch.wordCount} 字）`)
       }
@@ -79,7 +80,8 @@ export class ImportInitializeCommand extends BaseWorkflowCommand<void> {
       } catch {
         failCount++
       }
-      if (i % 10 === 0) {
+      // 减少进度更新频率：每 20 章更新一次
+      if (i % 20 === 0) {
         callbacks.setProgress(45 + Math.round((i / this.chapters.length) * 45))
       }
     }
@@ -251,6 +253,20 @@ export class InferGlobalSettingsCommand extends BaseWorkflowCommand<void> {
       callbacks.log(`✅ 已生成 ${createdCount} 张角色卡`)
     }
 
+    // ===== 创建角色卡提取的后处理状态记录（避免角色图谱显示叹号）=====
+    // 导入小说时直接写入角色卡，需要创建后处理状态记录表示提取成功
+    const { ARCH_CHARACTER_SCOPE } = await import('../architecture-workflow')
+    await ipc.invoke('db:post-process-create-run', {
+      triggerSourceType: 'unknown',
+      triggerSourceId: ARCH_CHARACTER_SCOPE,
+      sourceLabel: '架构-角色图谱',
+      steps: [{ key: 'extract_character_cards', label: '提取角色卡片', critical: true }]
+    })
+    const run = await ipc.invoke('db:post-process-get-latest-run', 'unknown', ARCH_CHARACTER_SCOPE)
+    if (run?.id) {
+      await ipc.invoke('db:post-process-mark-step-ok', run.id, 'extract_character_cards')
+    }
+
     callbacks.setProgress(90)
     this.notifyRefresh(['fileTree', 'characterCards'])
   }
@@ -282,10 +298,21 @@ export class InferBlueprintsPerChapterCommand extends BaseWorkflowCommand<void> 
     let completedCount = 0
     let failedCount = 0
 
-    // 限流并发执行器
+    // 限流并发执行器（带总超时保护）
     const runWithConcurrency = async (tasks: (() => Promise<void>)[], limit: number) => {
       const executing = new Set<Promise<void>>()
+      // 总超时保护：每章最多10分钟，防止某个章节无限等待
+      const maxTimePerChapter = 600000 // 10分钟
+      const startTime = Date.now()
+      
       for (const task of tasks) {
+        // 检查总时间是否超过限制
+        const elapsed = Date.now() - startTime
+        if (elapsed > tasks.length * maxTimePerChapter) {
+          callbacks.log(`⚠️ 总执行时间已超过预期，强制终止剩余章节处理`)
+          break
+        }
+        
         const p = task().then(() => { executing.delete(p) })
         executing.add(p)
         if (executing.size >= limit) {
@@ -330,16 +357,21 @@ export class InferBlueprintsPerChapterCommand extends BaseWorkflowCommand<void> 
         await ipc.invoke('db:blueprint-upsert', finalBlueprint)
 
         completedCount++
-        callbacks.log(`  ✅ 第 ${ch.number} 章蓝图已生成`)
+        // 减少日志输出频率：每 5 章输出一次
+        if (completedCount % 5 === 0) {
+          callbacks.log(`  ✅ 已完成 ${completedCount} 章蓝图生成...`)
+        }
       } catch (err) {
         failedCount++
         callbacks.log(`  ⚠️ 第 ${ch.number} 章蓝图生成失败: ${err instanceof Error ? err.message : String(err)}`)
       }
 
-      // 更新进度
+      // 减少进度更新频率：每 5 章更新一次
       const total = chapters.length
       const done = completedCount + failedCount
-      callbacks.setProgress(5 + Math.round((done / total) * 90))
+      if (done % 5 === 0) {
+        callbacks.setProgress(5 + Math.round((done / total) * 90))
+      }
     })
 
     await runWithConcurrency(tasks, InferBlueprintsPerChapterCommand.CONCURRENCY_LIMIT)

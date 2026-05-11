@@ -7,6 +7,7 @@ import { ProjectData } from '../../src/shared/ipc-channels'
 import { DIR_VELA_INTERNAL, DIR_PROMPTS } from '../../src/shared/project-paths'
 import { initProjectDatabase } from '../database'
 import { ProjectCoreRepository } from '../repositories/project-core-repository'
+import { exportProject, importProject, checkProjectExists } from '../utils/project-import-export'
 
 interface RecentProject {
   name: string
@@ -213,5 +214,27 @@ export function registerProjectController() {
     })
     if (result.canceled || result.filePaths.length === 0) return null
     return result.filePaths[0]
+  })
+
+  ipcMain.handle('dialog:select-file', async (_event, options?: { title?: string; filters?: Array<{ name: string; extensions: string[] }> }) => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      title: options?.title || '选择文件',
+      filters: options?.filters || [{ name: '所有文件', extensions: ['*'] }],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
+
+  ipcMain.handle('project:export', async (_event, projectPath: string, targetPath: string) => {
+    return await exportProject({ projectPath, targetPath })
+  })
+
+  ipcMain.handle('project:import', async (_event, zipPath: string, targetDir: string, confirmType: 'none' | 'overwrite' | 'clear' = 'none') => {
+    return await importProject({ zipPath, targetDir }, confirmType)
+  })
+
+  ipcMain.handle('project:check-exists', async (_event, projectName: string, targetDir: string) => {
+    return checkProjectExists(projectName, targetDir)
   })
 }

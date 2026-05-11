@@ -616,8 +616,11 @@ export const BUILTIN_PROMPTS: PromptTemplate[] = [
       global_summary: '上下文检索结果',
       world_building: '世界观设定',
       review_focus: '审稿维度侧重点（可选）',
+      segment_info: '分段信息（长文本分段审查时使用）',
     },
-    content: `请对以下章节进行审查。
+    content: `{{segment_info}}
+
+请对以下章节进行审查。
 
 【待审章节】
 {{chapter_content}}

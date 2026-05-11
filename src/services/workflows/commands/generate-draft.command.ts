@@ -145,6 +145,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
         type: 'chapter',
         filePath: pseudoPath,
         content: cleanDraftText,
+        chapterNumber: this.chapterInfo.chapterNumber,
       })
     } catch { /* 忽略 */ }
 

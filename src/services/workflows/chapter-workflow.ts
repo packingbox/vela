@@ -3,6 +3,24 @@ import type { DraftMeta } from '../draft-index'
 
 import type { DraftStatus } from '../../shared/draft-status'
 
+/**
+ * 关闭指定章节的特定类型tab
+ * @param chapterNumber 章节号
+ * @param types 要关闭的tab类型列表，不传则关闭该章节所有tab
+ */
+async function closeChapterTabs(chapterNumber: number, types?: string[]) {
+  const { useEditorStore } = await import('../../stores/editor-store')
+  const tabs = useEditorStore.getState().tabs
+  let chapterTabs = tabs.filter(t => t.chapterNumber === chapterNumber)
+  if (types && types.length > 0) {
+    chapterTabs = chapterTabs.filter(t => types.includes(t.type))
+  }
+  if (chapterTabs.length > 0) {
+    chapterTabs.forEach(t => useEditorStore.getState().closeTab(t.id))
+  }
+  return chapterTabs.length
+}
+
 // ==========================================
 // 1. 结构与类型导出 (保留对外的向后兼容)
 // ==========================================
@@ -251,6 +269,7 @@ export function createFinalizeWorkflow(params: FinalizeOnlyParams): WorkflowDefi
             type: 'chapter',
             filePath: dbPath,
             content: fullContent?.content || '',
+            chapterNumber: params.chapterNumber,
           })
         }
       }
@@ -280,6 +299,9 @@ export function createAutoWriteWorkflow(chapterInfo: ChapterInfo): WorkflowDefin
         name: '审稿',
         description: '一致性检查（角色/剧情/世界观），生成审稿报告',
         executor: async (_step, context, callbacks) => {
+          // 关闭草稿tab（写稿步骤打开的）
+          await closeChapterTabs(chapterInfo.chapterNumber, ['chapter'])
+          
           const { ReviewChapterCommand } = await import('./commands/review-chapter.command')
           const cmd = new ReviewChapterCommand({
             draftPath: context.data.draftPath as string,
@@ -308,6 +330,9 @@ export function createAutoWriteWorkflow(chapterInfo: ChapterInfo): WorkflowDefin
         name: '修稿',
         description: '根据审稿报告精准修复问题',
         executor: async (_step, context, callbacks) => {
+          // 关闭审稿报告tab（审稿步骤打开的）
+          await closeChapterTabs(chapterInfo.chapterNumber, ['review-report'])
+          
           const { RefineFromReviewCommand } = await import('./commands/refine-from-review.command')
           
           const cmd = new RefineFromReviewCommand({
@@ -327,6 +352,9 @@ export function createAutoWriteWorkflow(chapterInfo: ChapterInfo): WorkflowDefin
         name: '定稿',
         description: '写入 manuscript/，开启后处理更新三路大纲',
         executor: async (_step, context, callbacks) => {
+          // 关闭修稿合并tab（修稿步骤打开的）
+          await closeChapterTabs(chapterInfo.chapterNumber, ['diff'])
+          
           // 获取修稿后的内容（从最新草稿版本）
           const { readDraftBody } = await import('../../stores/draft-store')
           
@@ -354,32 +382,8 @@ export function createAutoWriteWorkflow(chapterInfo: ChapterInfo): WorkflowDefin
       },
     ],
     onComplete: {
-      mode: 'open',
+      mode: 'silent',
       message: `🎉 第${chapterInfo.chapterNumber}章自动编写完成！`,
-      openResult: async () => {
-        const { useEditorStore } = await import('../../stores/editor-store')
-        const { useProjectStore } = await import('../../stores/project-store')
-        const project = useProjectStore.getState().currentProject
-        if (!project) return
-        const { ipc } = await import('../ipc-client')
-        const draftMeta = await ipc.invoke('db:draft-get-finalized', chapterInfo.chapterNumber)
-        if (draftMeta) {
-          const fullContent = await ipc.invoke('db:draft-get-full', draftMeta.id)
-          let displayTitle = chapterInfo.title
-          try {
-            const bp = await ipc.invoke('db:blueprint-get', chapterInfo.chapterNumber)
-            if (bp?.title) displayTitle = bp.title
-          } catch { /* 蓝图读取失败时回退 */ }
-          const dbPath = `vela://manuscript/${draftMeta.id}`
-          useEditorStore.getState().openFile({
-            id: dbPath,
-            name: `第${chapterInfo.chapterNumber}章 ${displayTitle}`,
-            type: 'chapter',
-            filePath: dbPath,
-            content: fullContent?.content || '',
-          })
-        }
-      }
     },
   }
 }

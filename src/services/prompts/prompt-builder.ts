@@ -149,6 +149,12 @@ export class ChapterPromptBuilder extends BasePromptBuilder {
     this.variables.knowledge_query_hint = hint;
     return this;
   }
+
+  /** 分段信息（用于长文本分段修稿） */
+  withSegmentInfo(info: { current: number; total: number; startPos: number; endPos: number }) {
+    this.variables.segment_info = `【分段修稿】当前处理第 ${info.current}/${info.total} 段（位置：${info.startPos}-${info.endPos}）`;
+    return this;
+  }
 }
 
 /**
@@ -178,6 +184,12 @@ export class ReviewPromptBuilder extends BasePromptBuilder {
   /** 审稿维度侧重点（角色一致性/世界观合理性/剧情逻辑等） */
   withReviewFocus(focus: string) {
     this.variables.review_focus = focus;
+    return this;
+  }
+
+  /** 分段信息（用于长文本分段审查） */
+  withSegmentInfo(info: { current: number; total: number; startPos: number; endPos: number }) {
+    this.variables.segment_info = `【分段审查】当前处理第 ${info.current}/${info.total} 段（位置：${info.startPos}-${info.endPos}）`;
     return this;
   }
 }

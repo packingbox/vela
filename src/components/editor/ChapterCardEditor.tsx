@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Save, BookOpen, RefreshCw, Plus, Trash2,
   Sparkles, PenLine, Bot, Layers
@@ -54,13 +54,31 @@ export default function ChapterCardEditor() {
   // 蓝图生成弹窗（替代原 inline 批量面板）
   const [showBlueprintDialog, setShowBlueprintDialog] = useState(false)
 
-  const loadBlueprints = useCallback(async () => {
+  // 使用 ref 保存当前选中的章节号，避免依赖循环
+  const selectedChapterRef = useRef<number | null>(null)
+  
+  const loadBlueprints = useCallback(async (keepSelection = true) => {
     if (!currentProject) return
     setLoading(true)
     try {
       const data = await loadDirectoryBlueprints()
       setBlueprints(data)
-      if (data.length > 0) setSelectedIdx(0)
+      // 恢复选中状态：尝试找到之前选中的章节，否则选中第一个
+      if (data.length > 0) {
+        if (keepSelection && selectedChapterRef.current) {
+          const newIdx = data.findIndex(bp => bp.chapterNumber === selectedChapterRef.current)
+          if (newIdx >= 0) {
+            setSelectedIdx(newIdx)
+          } else {
+            // 如果之前的章节不存在了，选中第一个
+            setSelectedIdx(0)
+            selectedChapterRef.current = data[0]?.chapterNumber ?? null
+          }
+        } else {
+          setSelectedIdx(0)
+          selectedChapterRef.current = data[0]?.chapterNumber ?? null
+        }
+      }
       // 获取下一个待写章节号
       const maxFinalized = await ipc.invoke('db:draft-get-max-finalized-chapter')
       setNextWriteChapter(maxFinalized !== null ? maxFinalized + 1 : 1)
@@ -70,6 +88,13 @@ export default function ChapterCardEditor() {
     setLoading(false)
     setDirty(false)
   }, [currentProject, addLog])
+
+  // 当选中索引变化时，更新 ref
+  useEffect(() => {
+    if (blueprints.length > 0 && selectedIdx < blueprints.length) {
+      selectedChapterRef.current = blueprints[selectedIdx].chapterNumber
+    }
+  }, [selectedIdx, blueprints])
 
   useEffect(() => {
     let mounted = true
@@ -261,13 +286,18 @@ export default function ChapterCardEditor() {
 
     const { createAutoWriteWorkflow } = await import('../../services/workflows/chapter-workflow')
     
-    const totalChapters = blueprints.length
+    // 过滤出未完成的章节（章节号 >= nextWriteChapter），并按章节号排序
+    const pendingBlueprints = blueprints
+      .filter(bp => bp.chapterNumber >= (nextWriteChapter ?? 1))
+      .sort((a, b) => a.chapterNumber - b.chapterNumber)
+    
+    const totalChapters = pendingBlueprints.length
     let completedCount = 0
     
-    addLog('info', `🚀 开始批量自动编写，共${totalChapters}章`)
+    addLog('info', `🚀 开始批量自动编写，共${totalChapters}章（从第${nextWriteChapter ?? 1}章开始）`)
 
-    // 遍历所有章节，依次执行自动编写
-    for (const bp of blueprints) {
+    // 遍历未完成的章节，依次执行自动编写
+    for (const bp of pendingBlueprints) {
       try {
         addLog('info', `📝 正在编写第${bp.chapterNumber}章 · ${bp.title || '未命名'}`)
         
@@ -282,12 +312,11 @@ export default function ChapterCardEditor() {
           userGuidance: bp.userGuidance,
         }
 
-        // 创建并启动工作流
+        // 创建工作流
         const workflow = createAutoWriteWorkflow(chapterInfo)
-        startWorkflow(workflow)
         
-        // 等待工作流完成
-        await new Promise<void>((resolve) => {
+        // ⚠️ 重要：先注册事件监听器，再启动工作流，避免竞态条件
+        const completionPromise = new Promise<void>((resolve) => {
           const off = globalEventBus.on('WORKFLOW_COMPLETE', (payload) => {
             if (payload.type === 'auto_write') {
               off()
@@ -295,9 +324,24 @@ export default function ChapterCardEditor() {
             }
           })
         })
+        
+        // 启动工作流
+        startWorkflow(workflow)
+        
+        // 等待工作流完成
+        await completionPromise
 
         completedCount++
         addLog('info', `✅ 第${bp.chapterNumber}章编写完成 (${completedCount}/${totalChapters})`)
+        
+        // 关闭当前章节的所有tab（初稿/审查/合并/定稿等）
+        const { useEditorStore } = await import('../../stores/editor-store')
+        const tabs = useEditorStore.getState().tabs
+        const chapterTabs = tabs.filter(t => t.chapterNumber === bp.chapterNumber)
+        if (chapterTabs.length > 0) {
+          chapterTabs.forEach(t => useEditorStore.getState().closeTab(t.id))
+          addLog('info', `🔒 已关闭第${bp.chapterNumber}章相关页面 (${chapterTabs.length}个)`)
+        }
         
         // 刷新蓝图状态，更新 nextWriteChapter
         await loadBlueprints()

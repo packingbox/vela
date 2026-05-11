@@ -24,7 +24,26 @@ export default defineConfig({
         build: {
           // 强制输出 CommonJS，保证 better-sqlite3 等 native 模块能正常加载
           rollupOptions: {
-            external: ['better-sqlite3', '@lancedb/lancedb'],
+            external: [
+              'better-sqlite3',
+              '@lancedb/lancedb',
+              'archiver',
+              'unzipper',
+              'isarray',
+              'process-nextick-args',
+              'core-util-is',
+              'inherits',
+              'safe-buffer',
+              'string_decoder',
+              'util-deprecate',
+              'bluebird',
+              'duplexer2',
+              'fs-extra',
+              'graceful-fs',
+              'node-int64',
+              'events-universal',
+              'bare-events'
+            ],
             output: {
               format: 'cjs'
             }

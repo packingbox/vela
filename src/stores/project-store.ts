@@ -114,6 +114,12 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   openProject: async (projectPath) => {
     set({ loading: true })
     try {
+      // 先关闭当前项目（清空 tab 和 Layer 2 Store）
+      const currentProject = get().currentProject
+      if (currentProject) {
+        callProjectClosed()
+      }
+      
       const result = await ipc.invoke('project:open', projectPath)
       if (result.success && result.project) {
         set({ currentProject: result.project })

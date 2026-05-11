@@ -60,6 +60,22 @@ export interface ProjectChannels {
     args: []
     return: string | null
   }
+  'dialog:select-file': {
+    args: [options?: { title?: string; filters?: Array<{ name: string; extensions: string[] }> }]
+    return: string | null
+  }
+  'project:export': {
+    args: [projectPath: string, targetPath: string]
+    return: { success: boolean; exportPath?: string; error?: string }
+  }
+  'project:import': {
+    args: [zipPath: string, targetDir: string, confirmType?: 'none' | 'overwrite' | 'clear']
+    return: { success: boolean; projectPath?: string; error?: string; needOverwrite?: boolean; needClear?: boolean; existingPath?: string }
+  }
+  'project:check-exists': {
+    args: [projectName: string, targetDir: string]
+    return: { exists: boolean; existingPath?: string }
+  }
 }
 
 // ===== 文件系统 =====

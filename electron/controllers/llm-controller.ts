@@ -75,13 +75,21 @@ export function registerLLMController() {
       responseFormat: request.responseFormat,
       thinking: request.thinking,
       signal: abortController.signal,
-      onChunk: (chunk: string) => win?.webContents.send('llm:stream-chunk', { requestId, chunk }),
+      onChunk: (chunk: string) => {
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('llm:stream-chunk', { requestId, chunk })
+        }
+      },
       onDone: (fullText: string, usage?: { promptTokens: number; completionTokens: number; totalTokens: number }) => {
-        win?.webContents.send('llm:stream-done', { requestId, fullText, usage })
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('llm:stream-done', { requestId, fullText, usage })
+        }
         activeStreams.delete(requestId)
       },
       onError: (error: string) => {
-        win?.webContents.send('llm:stream-error', { requestId, error })
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('llm:stream-error', { requestId, error })
+        }
         activeStreams.delete(requestId)
       },
     })

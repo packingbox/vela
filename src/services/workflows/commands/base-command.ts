@@ -37,21 +37,45 @@ export abstract class BaseWorkflowCommand<TResult = string> {
 
       // 取消监听：轮询 context.cancelled，主动中断 LLM 流
       let cancelCheckTimer: ReturnType<typeof setInterval> | null = null
+      // 超时计时器：无活动超过300秒(5分钟)则超时
+      let timeoutTimer: ReturnType<typeof setTimeout> | null = null
+
       if (context) {
         cancelCheckTimer = setInterval(() => {
           if (context.cancelled && streamRequestId) {
             clearInterval(cancelCheckTimer!)
             cancelCheckTimer = null
+            if (timeoutTimer) {
+              clearTimeout(timeoutTimer)
+              timeoutTimer = null
+            }
             llmStore.cancelGeneration(streamRequestId).catch(() => {})
             reject(new Error('工作流已取消'))
           }
         }, 200)
       }
 
+      // 设置超时：300秒(5分钟)无响应则超时
+      timeoutTimer = setTimeout(() => {
+        timeoutTimer = null
+        if (cancelCheckTimer) {
+          clearInterval(cancelCheckTimer)
+          cancelCheckTimer = null
+        }
+        if (streamRequestId) {
+          llmStore.cancelGeneration(streamRequestId).catch(() => {})
+        }
+        reject(new Error('LLM 请求超时（超过5分钟未响应）'))
+      }, 300000) // 300秒 = 5分钟
+
       const cleanup = () => {
         if (cancelCheckTimer) {
           clearInterval(cancelCheckTimer)
           cancelCheckTimer = null
+        }
+        if (timeoutTimer) {
+          clearTimeout(timeoutTimer)
+          timeoutTimer = null
         }
       }
 
@@ -66,6 +90,21 @@ export abstract class BaseWorkflowCommand<TResult = string> {
             if (context?.cancelled) return
             fullContent += chunk
             callbacks.appendText(chunk)
+            // 收到数据，重置超时计时器
+            if (timeoutTimer) {
+              clearTimeout(timeoutTimer)
+              timeoutTimer = setTimeout(() => {
+                timeoutTimer = null
+                if (cancelCheckTimer) {
+                  clearInterval(cancelCheckTimer)
+                  cancelCheckTimer = null
+                }
+                if (streamRequestId) {
+                  llmStore.cancelGeneration(streamRequestId).catch(() => {})
+                }
+                reject(new Error('LLM 请求超时（超过5分钟未响应）'))
+              }, 300000) // 300秒 = 5分钟
+            }
           },
           onDone: (text) => {
             cleanup()

@@ -33,6 +33,10 @@ export interface WorkflowRun {
   currentStepIndex: number
   createdAt: string
   completedAt?: string
+  /** 保存工作流定义引用，用于断点恢复时重新执行 */
+  definitionRef?: WorkflowDefinition
+  /** 保存上下文数据（如断点进度），用于断点恢复 */
+  contextData?: Record<string, unknown>
 }
 
 /** 工作流类型 */
@@ -135,6 +139,8 @@ interface WorkflowState {
   confirmContinue: (runId?: string) => void
   /** 取消工作流（传 runId 取消指定，不传取消全部） */
   cancelWorkflow: (runId?: string) => void
+  /** 从失败的工作流继续执行 */
+  resumeWorkflow: (runId: string, additionalParams?: Record<string, unknown>) => Promise<void>
   /** 添加全局日志 */
   addLog: (level: 'info' | 'warn' | 'error', message: string) => void
   /** 清空日志 */
@@ -211,6 +217,153 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
     })
   },
 
+  /**
+   * 从失败的工作流继续执行
+   * @param runId 失败的工作流 ID
+   * @param additionalParams 额外参数（如断点续审的进度信息）
+   */
+  resumeWorkflow: async (runId: string, additionalParams?: Record<string, unknown>) => {
+    const history = get().history
+    const failedRun = history.find((r) => r.id === runId)
+    if (!failedRun || failedRun.status !== 'failed') {
+      get().addLog('warn', `⚠️ 未找到可继续的失败工作流: ${runId}`)
+      return
+    }
+
+    // 获取失败步骤的索引
+    const failedStepIndex = failedRun.steps.findIndex((s) => s.status === 'failed')
+    const startStepIndex = failedStepIndex >= 0 ? failedStepIndex : 0
+
+    // 检查是否有保存的 definition 引用
+    const definition = failedRun.definitionRef
+    if (!definition) {
+      get().addLog('warn', `⚠️ 工作流「${failedRun.title}」无法继续：缺少定义引用`)
+      return
+    }
+
+    // 创建新的工作流运行实例，复制已完成的步骤状态
+    const run: WorkflowRun = {
+      id: randomUUID(),
+      type: failedRun.type,
+      title: `🔄 ${failedRun.title}`,
+      status: 'running',
+      currentStepIndex: startStepIndex,
+      createdAt: new Date().toISOString(),
+      steps: failedRun.steps.map((s, i) => {
+        if (i < startStepIndex) {
+          // 已完成的步骤保持状态
+          return { ...s }
+        }
+        return {
+          id: randomUUID(),
+          name: s.name,
+          description: s.description,
+          status: i === startStepIndex ? 'running' : 'pending',
+          logs: [],
+        }
+      }),
+      definitionRef: definition,
+    }
+
+    // 添加到活跃列表
+    set((s) => {
+      const newRuns = [...s.activeRuns, run]
+      return { activeRuns: newRuns, ...computeCompat(newRuns, s.waitingRuns) }
+    })
+    get().addLog('info', `🔄 继续工作流「${failedRun.title}」，从第 ${startStepIndex + 1} 步开始`)
+
+    // 自动联动：打开右侧面板的 AI 输出视图
+    import('./layout-store').then((m) => m.useLayoutStore.getState().openRightPanel('ai-output')).catch(() => {})
+
+    // 创建执行上下文，合并失败工作流的 contextData 和额外参数
+    const context: WorkflowContext = { 
+      data: { ...failedRun.contextData, ...additionalParams }, 
+      cancelled: false 
+    }
+    activeContexts.set(run.id, context)
+
+    // 从失败步骤开始执行（使用保存的 definition）
+    for (let i = startStepIndex; i < definition.steps.length; i++) {
+      if (context.cancelled) break
+
+      const stepDef = definition.steps[i]
+      updateStepById(set, run.id, i, { status: 'running', startedAt: new Date().toISOString(), progress: 0 })
+      get().addLog('info', `▶ [${run.title}] 执行步骤: ${stepDef.name}`)
+
+      // 创建步骤回调
+      const callbacks: StepCallbacks = {
+        log: (message) => {
+          appendStepLogById(set, run.id, i, message)
+          get().addLog('info', `  ${message}`)
+        },
+        setProgress: (progress) => {
+          updateStepById(set, run.id, i, { progress })
+        },
+        appendText: (text) => {
+          const activeRun = get().activeRuns.find(r => r.id === run.id)
+          if (activeRun) {
+            const step = activeRun.steps[i]
+            updateStepById(set, run.id, i, { result: (step.result || '') + text })
+          }
+        },
+      }
+
+      try {
+        const result = await stepDef.executor(run.steps[i], context, callbacks)
+        updateStepById(set, run.id, i, {
+          status: 'completed',
+          completedAt: new Date().toISOString(),
+          progress: 100,
+          result: result || get().activeRuns.find(r => r.id === run.id)?.steps[i].result,
+        })
+        get().addLog('info', `✅ [${run.title}] 步骤完成: ${stepDef.name}`)
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        updateStepById(set, run.id, i, {
+          status: 'failed',
+          error: errorMsg,
+          completedAt: new Date().toISOString(),
+        })
+        updateRunById(set, run.id, { status: 'failed' })
+        get().addLog('error', `❌ [${run.title}] 步骤失败: ${stepDef.name} — ${errorMsg}`)
+        break
+      }
+    }
+
+    // 检查是否全部完成
+    const finalRun = get().activeRuns.find((r) => r.id === run.id)
+    if (finalRun && finalRun.status === 'running') {
+      updateRunById(set, run.id, { status: 'completed', completedAt: new Date().toISOString() })
+      get().addLog('info', `🎉 工作流「${run.title}」已完成`)
+
+      // 通过 EventBus 广播工作流完成事件
+      import('../shared/event-bus').then((m) => {
+        m.globalEventBus.emit('WORKFLOW_COMPLETE', { type: run.type })
+      }).catch(() => {})
+    }
+
+    // 从活跃列表移除，存入历史（保存 context data 以便断点恢复）
+    const ctxData = activeContexts.get(run.id)?.data
+    set((s) => {
+      const completedRun = s.activeRuns.find((r) => r.id === run.id)
+      const newRuns = s.activeRuns.filter((r) => r.id !== run.id)
+      const newWaiting = { ...s.waitingRuns }
+      delete newWaiting[run.id]
+      const newHistory = completedRun
+        ? [{ ...completedRun, contextData: ctxData }, ...s.history].slice(0, 50)
+        : s.history
+      return {
+        activeRuns: newRuns,
+        history: newHistory,
+        waitingRuns: newWaiting,
+        ...computeCompat(newRuns, newWaiting),
+      }
+    })
+
+    // 清理上下文
+    activeContexts.delete(run.id)
+  },
+
   startWorkflow: async (definition, stepByStep = false) => {
     const run: WorkflowRun = {
       id: randomUUID(),
@@ -226,6 +379,7 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         status: 'pending',
         logs: [],
       })),
+      definitionRef: definition,
     }
 
     // 添加到活跃列表
@@ -337,14 +491,15 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
       }
     }
 
-    // 从活跃列表移除，存入历史
+    // 从活跃列表移除，存入历史（保存 context data 以便断点恢复）
+    const ctxData = activeContexts.get(run.id)?.data
     set(s => {
       const completedRun = s.activeRuns.find(r => r.id === run.id)
       const newRuns = s.activeRuns.filter(r => r.id !== run.id)
       const newWaiting = { ...s.waitingRuns }
       delete newWaiting[run.id]
       const newHistory = completedRun
-        ? [completedRun, ...s.history].slice(0, 50)
+        ? [{ ...completedRun, contextData: ctxData }, ...s.history].slice(0, 50)
         : s.history
       return {
         activeRuns: newRuns,
@@ -369,14 +524,15 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
       // 如果在步进等待，解除 Promise
       const resolve = continueResolveRefs.get(runId)
       if (resolve) { resolve(); continueResolveRefs.delete(runId) }
-      // 移入历史
+      // 移入历史（保存 context data 以便断点恢复）
+      const ctxData = activeContexts.get(runId)?.data
       set(s => {
         const targetRun = s.activeRuns.find(r => r.id === runId)
         const newRuns = s.activeRuns.filter(r => r.id !== runId)
         const newWaiting = { ...s.waitingRuns }
         delete newWaiting[runId]
         const newHistory = targetRun
-          ? [{ ...targetRun, status: 'failed' as const, completedAt: new Date().toISOString() }, ...s.history].slice(0, 50)
+          ? [{ ...targetRun, status: 'failed' as const, completedAt: new Date().toISOString(), contextData: ctxData }, ...s.history].slice(0, 50)
           : s.history
         return {
           activeRuns: newRuns,
@@ -393,10 +549,12 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         const resolve = continueResolveRefs.get(id)
         if (resolve) { resolve(); continueResolveRefs.delete(id) }
       }
+      // 取消全部（保存 context data 以便断点恢复）
       set(s => {
-        const cancelledRuns = s.activeRuns.map(r => ({
-          ...r, status: 'failed' as const, completedAt: new Date().toISOString(),
-        }))
+        const cancelledRuns = s.activeRuns.map(r => {
+          const ctxData = activeContexts.get(r.id)?.data
+          return { ...r, status: 'failed' as const, completedAt: new Date().toISOString(), contextData: ctxData }
+        })
         return {
           activeRuns: [],
           waitingRuns: {},

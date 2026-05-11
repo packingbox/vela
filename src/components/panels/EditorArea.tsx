@@ -17,6 +17,7 @@ import ReviewReport from '../editor/ReviewReport'
 import ThreeWayMerge from '../editor/ThreeWayMerge'  // 保留引用以防其他入口使用
 import WelcomePage from '../pages/WelcomePage'
 import KnowledgeOverview from '../pages/KnowledgeOverview'
+import ImportProjectDialog from '../dialogs/ImportProjectDialog'
 import { useProjectStore } from '../../stores/project-store'
 import { useEditorStore, type EditorTab } from '../../stores/editor-store'
 import { useLayoutStore } from '../../stores/layout-store'
@@ -132,7 +133,8 @@ export default function EditorArea({ onNewProject }: EditorAreaProps) {
   const setActiveTab = useEditorStore(s => s.setActiveTab)
   const sidebarView = useLayoutStore((s) => s.sidebarView)
 
-
+  // 导入项目弹窗
+  const [showImportDialog, setShowImportDialog] = useState(false)
 
   // ===== 所有 Hooks 必须在条件 return 之前 =====
 
@@ -370,20 +372,27 @@ export default function EditorArea({ onNewProject }: EditorAreaProps) {
   // 侧栏为「主页」时，中间区域显示欢迎页
   if (sidebarView === 'home') {
     return (
-      <WelcomePage
-        onNewProject={() => {
-          useLayoutStore.getState().openNewProject()
-        }}
-        onOpenProject={async () => {
-          const folder = await ipc.invoke('dialog:select-folder')
-          if (folder) {
-            useProjectStore.getState().openProject(folder)
-          }
-        }}
-        onImportNovel={() => {
-          useLayoutStore.getState().openImportNovel()
-        }}
-      />
+      <>
+        <WelcomePage
+          onNewProject={() => {
+            useLayoutStore.getState().openNewProject()
+          }}
+          onOpenProject={async () => {
+            const folder = await ipc.invoke('dialog:select-folder')
+            if (folder) {
+              useProjectStore.getState().openProject(folder)
+            }
+          }}
+          onImportProject={() => setShowImportDialog(true)}
+          onImportNovel={() => {
+            useLayoutStore.getState().openImportNovel()
+          }}
+        />
+        <ImportProjectDialog
+          open={showImportDialog}
+          onClose={() => setShowImportDialog(false)}
+        />
+      </>
     )
   }
 
@@ -407,18 +416,25 @@ export default function EditorArea({ onNewProject }: EditorAreaProps) {
   // 未打开项目时显示欢迎页
   if (!currentProject) {
     return (
-      <WelcomePage
-        onNewProject={onNewProject}
-        onOpenProject={async () => {
-          const folder = await ipc.invoke('dialog:select-folder')
-          if (folder) {
-            useProjectStore.getState().openProject(folder)
-          }
-        }}
-        onImportNovel={() => {
-          useLayoutStore.getState().openImportNovel()
-        }}
-      />
+      <>
+        <WelcomePage
+          onNewProject={onNewProject}
+          onOpenProject={async () => {
+            const folder = await ipc.invoke('dialog:select-folder')
+            if (folder) {
+              useProjectStore.getState().openProject(folder)
+            }
+          }}
+          onImportProject={() => setShowImportDialog(true)}
+          onImportNovel={() => {
+            useLayoutStore.getState().openImportNovel()
+          }}
+        />
+        <ImportProjectDialog
+          open={showImportDialog}
+          onClose={() => setShowImportDialog(false)}
+        />
+      </>
     )
   }
 

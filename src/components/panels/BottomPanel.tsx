@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   Trash2, ChevronsDown, Loader2, CheckCircle2, XCircle, Clock,
-  Play, X, ChevronDown, ChevronRight, Zap,
+  Play, X, ChevronDown, ChevronRight, Zap, RefreshCw,
 } from 'lucide-react'
 import { useLayoutStore } from '../../stores/layout-store'
 import { useWorkflowStore, type WorkflowStep, type WorkflowRun } from '../../stores/workflow-store'
@@ -111,6 +111,7 @@ function TaskRunView() {
   const waitingRuns = useWorkflowStore(s => s.waitingRuns)
   const cancelWorkflow = useWorkflowStore(s => s.cancelWorkflow)
   const confirmContinue = useWorkflowStore(s => s.confirmContinue)
+  const resumeWorkflow = useWorkflowStore(s => s.resumeWorkflow)
 
   console.log('[BottomPanel] TaskRunView render: activeRuns=', activeRuns.map(r => r.id.slice(0,8) + ':' + r.status + ':' + r.steps.map(s=>s.status).join('/')))
 
@@ -152,30 +153,46 @@ function TaskRunView() {
             历史任务
           </div>
           <div className="px-2 pb-2">
-            {history.map((run) => (
-              <div
-                key={run.id}
-                className="flex items-center gap-2 px-2 py-1.5 rounded transition-colors hover:bg-[var(--color-hover)]"
-              >
-                {/* 状态图标 */}
-                {run.status === 'completed'
-                  ? <CheckCircle2 size={12} style={{ color: 'var(--color-success)', flexShrink: 0 }} />
-                  : <XCircle size={12} style={{ color: 'var(--color-error)', flexShrink: 0 }} />
-                }
-                {/* 标题 */}
-                <span className="flex-1 text-xs truncate" style={{ color: 'var(--color-text-secondary)' }}>
-                  {run.title}
-                </span>
-                {/* 步骤计数 */}
-                <span className="text-[0.68rem] font-mono flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
-                  {run.steps.filter(s => s.status === 'completed').length}/{run.steps.length}
-                </span>
-                {/* 时间 */}
-                <span className="text-[0.68rem] flex-shrink-0 w-14 text-right" style={{ color: 'var(--color-text-muted)' }}>
-                  {new Date(run.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-            ))}
+            {history.map((run) => {
+              const completedCount = run.steps.filter(s => s.status === 'completed').length
+              const isFailed = run.status === 'failed'
+              return (
+                <div
+                  key={run.id}
+                  className="flex items-center gap-2 px-2 py-1.5 rounded transition-colors hover:bg-[var(--color-hover)]"
+                >
+                  {/* 状态图标 */}
+                  {run.status === 'completed'
+                    ? <CheckCircle2 size={12} style={{ color: 'var(--color-success)', flexShrink: 0 }} />
+                    : <XCircle size={12} style={{ color: 'var(--color-error)', flexShrink: 0 }} />
+                  }
+                  {/* 标题 */}
+                  <span className="flex-1 text-xs truncate" style={{ color: 'var(--color-text-secondary)' }}>
+                    {run.title}
+                  </span>
+                  {/* 步骤计数 */}
+                  <span className="text-[0.68rem] font-mono flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
+                    {completedCount}/{run.steps.length}
+                  </span>
+                  {/* 时间 */}
+                  <span className="text-[0.68rem] flex-shrink-0 w-14 text-right" style={{ color: 'var(--color-text-muted)' }}>
+                    {new Date(run.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  {/* 失败任务显示继续按钮 */}
+                  {isFailed && (
+                    <button
+                      onClick={() => resumeWorkflow(run.id)}
+                      className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[0.68rem] font-medium flex-shrink-0"
+                      style={{ backgroundColor: 'var(--color-accent)', color: '#fff' }}
+                      title="继续任务"
+                    >
+                      <RefreshCw size={9} />
+                      继续
+                    </button>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
