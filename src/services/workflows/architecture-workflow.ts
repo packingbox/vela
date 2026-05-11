@@ -234,30 +234,29 @@ export function createCharacterExtractSteps(_projectPath: string, characterDynam
   ]
 }
 
-export function runArchCharacterExtract(projectPath: string, characterDynamicsContent: string, genre: string): void {
+export async function runArchCharacterExtract(projectPath: string, characterDynamicsContent: string, genre: string): Promise<void> {
   const steps = createCharacterExtractSteps(projectPath, characterDynamicsContent, genre)
-  import('../../stores/workflow-store').then(async ({ useWorkflowStore }) => {
-    await useWorkflowStore.getState().startWorkflow({
-      type: 'post_process',
-      title: '📋 后处理：角色卡提取',
-      steps: [
-        {
-          name: '提取角色卡片',
-          description: '从角色图谱中提取并生成角色卡片数据',
-          executor: async (_step, _ctx, callbacks) => {
-            const { globalEventBus } = await import('../../shared/event-bus')
-            const archStatus = await runPostProcessPipeline(projectPath, ARCH_CHARACTER_SCOPE, '架构-角色图谱', steps, callbacks)
-            if (archStatus.allCriticalPassed) {
-              // 角色卡提取成功 → 通过 EventBus 通知 ProjectService 刷新
-              globalEventBus.emit('ARCH_POSTPROCESS_UPDATED', {})
-            } else {
-              globalEventBus.emit('CHARACTER_EXTRACT_FAILED', { error: archStatus.steps.extract_character_cards?.error })
-              globalEventBus.emit('ARCH_POSTPROCESS_UPDATED', {})
-            }
-          },
+  const { useWorkflowStore } = await import('../../stores/workflow-store')
+  await useWorkflowStore.getState().startWorkflow({
+    type: 'post_process',
+    title: '📋 后处理：角色卡提取',
+    steps: [
+      {
+        name: '提取角色卡片',
+        description: '从角色图谱中提取并生成角色卡片数据',
+        executor: async (_step, _ctx, callbacks) => {
+          const { globalEventBus } = await import('../../shared/event-bus')
+          const archStatus = await runPostProcessPipeline(projectPath, ARCH_CHARACTER_SCOPE, '架构-角色图谱', steps, callbacks)
+          if (archStatus.allCriticalPassed) {
+            // 角色卡提取成功 → 通过 EventBus 通知 ProjectService 刷新
+            globalEventBus.emit('ARCH_POSTPROCESS_UPDATED', {})
+          } else {
+            globalEventBus.emit('CHARACTER_EXTRACT_FAILED', { error: archStatus.steps.extract_character_cards?.error })
+            globalEventBus.emit('ARCH_POSTPROCESS_UPDATED', {})
+          }
         },
-      ],
-    })
+      },
+    ],
   })
 }
 

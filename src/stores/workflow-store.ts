@@ -41,6 +41,7 @@ export type WorkflowType =
   | 'architecture_generation' // 架构生成（故事前提→角色图谱→世界观→情节大纲）
   | 'directory'               // 目录/蓝图生成
   | 'chapter_creation'        // 章节创作（写稿→修稿→审稿→定稿）
+  | 'auto_write'              // 自动编写（写稿→审稿→修稿→定稿全流程）
   | 'batch_generate'          // 批量生成
   | 'config_generation'       // 智能配置生成
   | 'post_process'            // 后处理任务（角色卡提取等）

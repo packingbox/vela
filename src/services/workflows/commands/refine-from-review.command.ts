@@ -12,6 +12,8 @@ export interface RefineFromReviewParams {
   reviewFileName?: string
   chapterNumber: number
   userRefinePrompt?: string
+  /** 是否自动合并修订稿到草稿，跳过合并视图（用于自动编写流程） */
+  autoMerge?: boolean
 }
 
 export class RefineFromReviewCommand extends BaseWorkflowCommand<string> {
@@ -62,20 +64,30 @@ export class RefineFromReviewCommand extends BaseWorkflowCommand<string> {
       userPrompt: this.params.userRefinePrompt,
     }) as { success: boolean; id: number }
 
-    const { useEditorStore } = await import('../../../stores/editor-store')
-    useEditorStore.getState().openFile({
-      id: `diff-${this.params.draftPath}-${createRes.id}`,
-      name: `审稿修复：第${this.params.chapterNumber}章`,
-      type: 'diff',
-      filePath: this.params.draftPath,
-      originalContent: this.params.draftContent,
-      content: cleanRefined,
-      revisionPath: String(createRes.id),
-      chapterNumber: this.params.chapterNumber,
-      chapterDir: `vela://draft/ch${this.params.chapterNumber}`,
-    })
-
-    callbacks.log(`✅ 审稿修复完成（${cleanRefined.length} 字），已生成修订稿版本 r${revIndex}`)
+    // 如果是自动编写流程，自动合并修订稿到草稿
+    if (this.params.autoMerge) {
+      // 标记修订稿为已合并
+      await ipc.invoke('db:revision-mark-merged', createRes.id, baseDraft.id)
+      // 更新草稿内容为修稿后的内容
+      await ipc.invoke('db:draft-update-content', baseDraft.id, cleanRefined, cleanRefined.length)
+      callbacks.log(`✅ 审稿修复完成（${cleanRefined.length} 字），已自动合并到草稿`)
+    } else {
+      // 正常流程：打开合并视图
+      const { useEditorStore } = await import('../../../stores/editor-store')
+      useEditorStore.getState().openFile({
+        id: `diff-${this.params.draftPath}-${createRes.id}`,
+        name: `审稿修复：第${this.params.chapterNumber}章`,
+        type: 'diff',
+        filePath: this.params.draftPath,
+        originalContent: this.params.draftContent,
+        content: cleanRefined,
+        revisionPath: String(createRes.id),
+        chapterNumber: this.params.chapterNumber,
+        chapterDir: `vela://draft/ch${this.params.chapterNumber}`,
+      })
+      callbacks.log(`✅ 审稿修复完成（${cleanRefined.length} 字），已生成修订稿版本 r${revIndex}`)
+    }
+    
     return refined
   }
 }

@@ -259,6 +259,132 @@ export function createFinalizeWorkflow(params: FinalizeOnlyParams): WorkflowDefi
 }
 
 /**
+ * 自动编写完整工作流 — 一键完成写稿→审稿→修稿→定稿全流程
+ */
+export function createAutoWriteWorkflow(chapterInfo: ChapterInfo): WorkflowDefinition {
+  return {
+    type: 'auto_write',
+    title: `🤖 自动编写 — 第 ${chapterInfo.chapterNumber} 章 · ${chapterInfo.title}`,
+    steps: [
+      {
+        name: '写稿',
+        description: '基于架构 + 蓝图 + 上下文生成草稿',
+        executor: async (step, context, callbacks) => {
+          const { GenerateDraftCommand } = await import('./commands/generate-draft.command')
+          const cmd = new GenerateDraftCommand(chapterInfo)
+          const result = await cmd.execute({ step, context, callbacks })
+          return result
+        },
+      },
+      {
+        name: '审稿',
+        description: '一致性检查（角色/剧情/世界观），生成审稿报告',
+        executor: async (_step, context, callbacks) => {
+          const { ReviewChapterCommand } = await import('./commands/review-chapter.command')
+          const cmd = new ReviewChapterCommand({
+            draftPath: context.data.draftPath as string,
+            draftContent: context.data.draftContent as string,
+            chapterNumber: chapterInfo.chapterNumber,
+            reviewFocus: '',
+          })
+          const result = await cmd.execute({ step: {} as any, context, callbacks })
+          
+          // 获取最新的审稿报告内容
+          const { getLatestReview } = await import('../draft-index')
+          const { readDraftBody } = await import('../../stores/draft-store')
+          const chapterDir = `vela://draft/ch${chapterInfo.chapterNumber}`
+          const latestReview = await getLatestReview(chapterDir, 1)
+          
+          if (latestReview) {
+            const reviewContent = await readDraftBody(`vela://review/${latestReview.id}`)
+            context.data.reviewContent = reviewContent
+            context.data.reviewFileName = latestReview.fileName
+          }
+          
+          return result
+        },
+      },
+      {
+        name: '修稿',
+        description: '根据审稿报告精准修复问题',
+        executor: async (_step, context, callbacks) => {
+          const { RefineFromReviewCommand } = await import('./commands/refine-from-review.command')
+          
+          const cmd = new RefineFromReviewCommand({
+            draftPath: context.data.draftPath as string,
+            draftContent: context.data.draftContent as string,
+            reviewReport: context.data.reviewContent as string || '',
+            reviewFileName: context.data.reviewFileName as string || '',
+            chapterNumber: chapterInfo.chapterNumber,
+            userRefinePrompt: '',
+            autoMerge: true, // 自动合并，跳过合并视图
+          })
+          const result = await cmd.execute({ step: {} as any, context, callbacks })
+          return result
+        },
+      },
+      {
+        name: '定稿',
+        description: '写入 manuscript/，开启后处理更新三路大纲',
+        executor: async (_step, context, callbacks) => {
+          // 获取修稿后的内容（从最新草稿版本）
+          const { readDraftBody } = await import('../../stores/draft-store')
+          
+          // 获取当前章节最新草稿
+          const { ipc } = await import('../ipc-client')
+          const drafts = await ipc.invoke('db:draft-list', chapterInfo.chapterNumber)
+          const latestDraft = (drafts as unknown as Array<Record<string, unknown>>)
+            .sort((a, b) => (Number(b.version) - Number(a.version)))[0]
+          
+          let finalContent = context.data.draftContent as string
+          if (latestDraft) {
+            finalContent = await readDraftBody(`vela://draft/${latestDraft.id}`)
+          }
+          
+          const { FinalizeChapterCommand } = await import('./commands/finalize-chapter.command')
+          const cmd = new FinalizeChapterCommand({
+            draftPath: context.data.draftPath as string,
+            draftContent: finalContent,
+            chapterNumber: chapterInfo.chapterNumber,
+            chapterInfo,
+          })
+          const result = await cmd.execute({ step: {} as any, context, callbacks })
+          return result
+        },
+      },
+    ],
+    onComplete: {
+      mode: 'open',
+      message: `🎉 第${chapterInfo.chapterNumber}章自动编写完成！`,
+      openResult: async () => {
+        const { useEditorStore } = await import('../../stores/editor-store')
+        const { useProjectStore } = await import('../../stores/project-store')
+        const project = useProjectStore.getState().currentProject
+        if (!project) return
+        const { ipc } = await import('../ipc-client')
+        const draftMeta = await ipc.invoke('db:draft-get-finalized', chapterInfo.chapterNumber)
+        if (draftMeta) {
+          const fullContent = await ipc.invoke('db:draft-get-full', draftMeta.id)
+          let displayTitle = chapterInfo.title
+          try {
+            const bp = await ipc.invoke('db:blueprint-get', chapterInfo.chapterNumber)
+            if (bp?.title) displayTitle = bp.title
+          } catch { /* 蓝图读取失败时回退 */ }
+          const dbPath = `vela://manuscript/${draftMeta.id}`
+          useEditorStore.getState().openFile({
+            id: dbPath,
+            name: `第${chapterInfo.chapterNumber}章 ${displayTitle}`,
+            type: 'chapter',
+            filePath: dbPath,
+            content: fullContent?.content || '',
+          })
+        }
+      }
+    },
+  }
+}
+
+/**
  * 修复定稿后处理工作流 — 当定稿后的三路推演失败时可重跑
  * 从 manuscript/ 读取已定稿内容，重新执行 FinalizeChapterCommand 的后处理部分
  */

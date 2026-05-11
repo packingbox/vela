@@ -182,7 +182,7 @@ export class GenerateCharactersCommand extends BaseWorkflowCommand<string> {
 
     callbacks.log('📇 正在启动角色卡自动提取流水线...')
     const { runArchCharacterExtract } = await import('../architecture-workflow')
-    runArchCharacterExtract(project.path, result, config.genre)
+    await runArchCharacterExtract(project.path, result, config.genre)
 
     const partial = (context.data.partial as PartialArchData) || await loadPartialData(project.path)
     partial.character_dynamics_result = result

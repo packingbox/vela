@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   Save, BookOpen, RefreshCw, Plus, Trash2,
-  Sparkles, PenLine
+  Sparkles, PenLine, Bot, Layers
 } from 'lucide-react'
 import { useProjectStore } from '../../stores/project-store'
 import { useWorkflowStore } from '../../stores/workflow-store'
@@ -77,13 +77,20 @@ export default function ChapterCardEditor() {
     return () => { mounted = false }
   }, [loadBlueprints])
 
-  // 监听工作流完成事件，如果蓝图生成完毕则自动刷新
+  // 监听工作流完成事件，刷新蓝图和下一章状态
   useEffect(() => {
-    return globalEventBus.on('WORKFLOW_COMPLETE', (payload) => {
-      if (payload.type === 'directory') {
-        loadBlueprints()
-      }
-    })
+    const handleWorkflowComplete = () => {
+      loadBlueprints()
+    }
+    const handleFinalizeComplete = () => {
+      loadBlueprints()
+    }
+    const off1 = globalEventBus.on('WORKFLOW_COMPLETE', handleWorkflowComplete)
+    const off2 = globalEventBus.on('FINALIZE_COMPLETE', handleFinalizeComplete)
+    return () => {
+      off1()
+      off2()
+    }
   }, [loadBlueprints])
 
   const selected = blueprints[selectedIdx] ?? null
@@ -193,6 +200,118 @@ export default function ChapterCardEditor() {
     })
   }
 
+  /**
+   * 自动编写此章 — 一键完成写稿→审稿→修稿→定稿全流程
+   */
+  const handleAutoWriteChapter = async (bp: ChapterBlueprint) => {
+    if (!currentProject) return
+
+    // 前置校验：故事架构是否就绪
+    const guard = await guardDirectoryGeneration()
+    if (!guard.ok) {
+      addLog('error', `⚠️ 前置条件未满足：${guard.message}`)
+      toast.warning(`无法出发\n\n${guard.message}`)
+      return
+    }
+    if (guard.message) {
+      const yes = await confirm(`${guard.message}\n\n是否仍要继续自动编写？`, {
+        title: '前置条件警告',
+        confirmText: '继续编写',
+      })
+      if (!yes) return
+    }
+
+    const { createAutoWriteWorkflow } = await import('../../services/workflows/chapter-workflow')
+    
+    const chapterInfo = {
+      chapterNumber: bp.chapterNumber,
+      title: bp.title,
+      role: bp.role,
+      purpose: bp.purpose,
+      characters: bp.characters,
+      keyEvents: bp.keyEvents,
+      suspenseHook: bp.suspenseHook,
+      userGuidance: bp.userGuidance,
+    }
+
+    startWorkflow(createAutoWriteWorkflow(chapterInfo))
+    addLog('info', `🚀 已启动第${bp.chapterNumber}章自动编写流程`)
+  }
+
+  /**
+   * 批量自动编写所有章节 — 对每章依次执行写稿→审稿→修稿→定稿
+   */
+  const handleBatchAutoWrite = async () => {
+    if (!currentProject) return
+
+    // 前置校验：故事架构是否就绪
+    const guard = await guardDirectoryGeneration()
+    if (!guard.ok) {
+      addLog('error', `⚠️ 前置条件未满足：${guard.message}`)
+      toast.warning(`无法出发\n\n${guard.message}`)
+      return
+    }
+    if (guard.message) {
+      const yes = await confirm(`${guard.message}\n\n是否仍要继续批量编写？`, {
+        title: '前置条件警告',
+        confirmText: '继续编写',
+      })
+      if (!yes) return
+    }
+
+    const { createAutoWriteWorkflow } = await import('../../services/workflows/chapter-workflow')
+    
+    const totalChapters = blueprints.length
+    let completedCount = 0
+    
+    addLog('info', `🚀 开始批量自动编写，共${totalChapters}章`)
+
+    // 遍历所有章节，依次执行自动编写
+    for (const bp of blueprints) {
+      try {
+        addLog('info', `📝 正在编写第${bp.chapterNumber}章 · ${bp.title || '未命名'}`)
+        
+        const chapterInfo = {
+          chapterNumber: bp.chapterNumber,
+          title: bp.title,
+          role: bp.role,
+          purpose: bp.purpose,
+          characters: bp.characters,
+          keyEvents: bp.keyEvents,
+          suspenseHook: bp.suspenseHook,
+          userGuidance: bp.userGuidance,
+        }
+
+        // 创建并启动工作流
+        const workflow = createAutoWriteWorkflow(chapterInfo)
+        startWorkflow(workflow)
+        
+        // 等待工作流完成
+        await new Promise<void>((resolve) => {
+          const off = globalEventBus.on('WORKFLOW_COMPLETE', (payload) => {
+            if (payload.type === 'auto_write') {
+              off()
+              resolve()
+            }
+          })
+        })
+
+        completedCount++
+        addLog('info', `✅ 第${bp.chapterNumber}章编写完成 (${completedCount}/${totalChapters})`)
+        
+        // 刷新蓝图状态，更新 nextWriteChapter
+        await loadBlueprints()
+        
+      } catch (error) {
+        addLog('error', `❌ 第${bp.chapterNumber}章编写失败: ${error}`)
+        // 继续下一章
+      }
+    }
+
+    addLog('info', `🎉 批量自动编写完成！共完成${completedCount}/${totalChapters}章`)
+    toast.success(`批量编写完成！\n共完成 ${completedCount}/${totalChapters} 章`)
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full gap-2" style={{ color: 'var(--color-text-muted)' }}>
@@ -232,17 +351,40 @@ export default function ChapterCardEditor() {
         <div className="flex items-center gap-1">
           {/* 写作入口 — 仅下一章可写时显示 */}
           {nextWriteChapter !== null && (
-            <Button
-              variant="ai"
-              size="sm"
-              onClick={() => {
-                const bp = blueprints.find(b => b.chapterNumber === nextWriteChapter)
-                if (bp) handleWriteChapter(bp)
-              }}
-            >
-              <PenLine size={12} />
-              写作第{nextWriteChapter}章
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleBatchAutoWrite}
+                title="批量自动编写所有章节：对每章依次执行写稿→审稿→修稿→定稿"
+              >
+                <Layers size={12} />
+                批量写作
+              </Button>
+              <Button
+                variant="ai"
+                size="sm"
+                onClick={() => {
+                  const bp = blueprints.find(b => b.chapterNumber === nextWriteChapter)
+                  if (bp) handleWriteChapter(bp)
+                }}
+              >
+                <PenLine size={12} />
+                写作第{nextWriteChapter}章
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const bp = blueprints.find(b => b.chapterNumber === nextWriteChapter)
+                  if (bp) handleAutoWriteChapter(bp)
+                }}
+                title="AI自动写完本章：写稿→审稿→修稿→定稿"
+              >
+                <Bot size={12} />
+                自动编写
+              </Button>
+            </>
           )}
           {/* AI 生成蓝图 → 弹出 DirectoryConfigDialog */}
           <Button
