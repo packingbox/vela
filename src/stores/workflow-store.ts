@@ -1,6 +1,27 @@
 import { create } from 'zustand'
 import { randomUUID } from '../utils/id'
 
+// ===== 持久化工具 =====
+
+const STORAGE_KEY = 'vela-workflow-history'
+
+function loadHistory(): WorkflowRun[] {
+  try {
+    const data = localStorage.getItem(STORAGE_KEY)
+    return data ? JSON.parse(data) : []
+  } catch {
+    return []
+  }
+}
+
+function saveHistory(history: WorkflowRun[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(history))
+  } catch {
+    // 忽略存储错误
+  }
+}
+
 // ===== 工作流数据模型 =====
 
 /** 工作流步骤状态 */
@@ -166,7 +187,7 @@ function computeCompat(activeRuns: WorkflowRun[], waitingRuns: Record<string, { 
 
 export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
   activeRuns: [],
-  history: [],
+  history: loadHistory(), // 初始化时加载历史
   globalLogs: [],
   waitingRuns: {},
 
@@ -352,6 +373,8 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
       const newHistory = completedRun
         ? [{ ...completedRun, contextData: ctxData }, ...s.history].slice(0, 50)
         : s.history
+      // 保存历史到 localStorage
+      saveHistory(newHistory)
       return {
         activeRuns: newRuns,
         history: newHistory,
@@ -534,6 +557,8 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         const newHistory = targetRun
           ? [{ ...targetRun, status: 'failed' as const, completedAt: new Date().toISOString(), contextData: ctxData }, ...s.history].slice(0, 50)
           : s.history
+        // 保存历史到 localStorage
+        saveHistory(newHistory)
         return {
           activeRuns: newRuns,
           history: newHistory,
@@ -555,10 +580,13 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
           const ctxData = activeContexts.get(r.id)?.data
           return { ...r, status: 'failed' as const, completedAt: new Date().toISOString(), contextData: ctxData }
         })
+        const newHistory = [...cancelledRuns, ...s.history].slice(0, 50)
+        // 保存历史到 localStorage
+        saveHistory(newHistory)
         return {
           activeRuns: [],
           waitingRuns: {},
-          history: [...cancelledRuns, ...s.history].slice(0, 50),
+          history: newHistory,
           currentRun: null,
           waitingForConfirm: false,
           waitingAfterStepIndex: -1,
@@ -569,14 +597,14 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
   },
 
   addLog: (level, message) => {
-    const entry = { time: new Date().toLocaleTimeString('zh-CN'), level, message }
-    set((s) => ({
-      globalLogs: [...s.globalLogs, entry].slice(-500), // 保留最近 500 条
-    }))
-  },
+      const entry = { time: new Date().toLocaleTimeString('zh-CN'), level, message }
+      set((s) => ({
+        globalLogs: [...s.globalLogs, entry].slice(-500), // 保留最近 500 条
+      }))
+    },
 
-  clearLogs: () => set({ globalLogs: [] }),
-}))
+    clearLogs: () => set({ globalLogs: [] }),
+  }))
 
 // ===== 工具函数（按 runId 操作） =====
 

@@ -76,20 +76,26 @@ export function registerLLMController() {
       thinking: request.thinking,
       signal: abortController.signal,
       onChunk: (chunk: string) => {
-        if (win && !win.isDestroyed()) {
-          win.webContents.send('llm:stream-chunk', { requestId, chunk })
-        }
+        try {
+          if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+            win.webContents.send('llm:stream-chunk', { requestId, chunk })
+          }
+        } catch { /* 忽略发送错误 */ }
       },
       onDone: (fullText: string, usage?: { promptTokens: number; completionTokens: number; totalTokens: number }) => {
-        if (win && !win.isDestroyed()) {
-          win.webContents.send('llm:stream-done', { requestId, fullText, usage })
-        }
+        try {
+          if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+            win.webContents.send('llm:stream-done', { requestId, fullText, usage })
+          }
+        } catch { /* 忽略发送错误 */ }
         activeStreams.delete(requestId)
       },
       onError: (error: string) => {
-        if (win && !win.isDestroyed()) {
-          win.webContents.send('llm:stream-error', { requestId, error })
-        }
+        try {
+          if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+            win.webContents.send('llm:stream-error', { requestId, error })
+          }
+        } catch { /* 忽略发送错误 */ }
         activeStreams.delete(requestId)
       },
     })
