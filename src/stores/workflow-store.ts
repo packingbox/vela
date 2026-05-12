@@ -160,6 +160,8 @@ interface WorkflowState {
   confirmContinue: (runId?: string) => void
   /** 取消工作流（传 runId 取消指定，不传取消全部） */
   cancelWorkflow: (runId?: string) => void
+  /** 从历史中移除指定工作流 */
+  removeFromHistory: (runId: string) => void
   /** 从失败的工作流继续执行 */
   resumeWorkflow: (runId: string, additionalParams?: Record<string, unknown>) => Promise<void>
   /** 添加全局日志 */
@@ -286,10 +288,12 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
       definitionRef: definition,
     }
 
-    // 添加到活跃列表
+    // 添加到活跃列表，并从历史中移除旧的工作流
     set((s) => {
       const newRuns = [...s.activeRuns, run]
-      return { activeRuns: newRuns, ...computeCompat(newRuns, s.waitingRuns) }
+      const newHistory = s.history.filter(r => r.id !== runId)
+      saveHistory(newHistory)
+      return { activeRuns: newRuns, history: newHistory, ...computeCompat(newRuns, s.waitingRuns) }
     })
     get().addLog('info', `🔄 继续工作流「${failedRun.title}」，从第 ${startStepIndex + 1} 步开始`)
 
@@ -594,6 +598,35 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
       })
       get().addLog('warn', '⏹ 所有工作流已取消')
     }
+  },
+
+  removeFromHistory: (runId) => {
+    // 如果工作流还在运行，先取消它
+    const ctx = activeContexts.get(runId)
+    if (ctx) {
+      ctx.cancelled = true
+    }
+    // 如果在步进等待，解除 Promise
+    const resolve = continueResolveRefs.get(runId)
+    if (resolve) {
+      resolve()
+      continueResolveRefs.delete(runId)
+    }
+    set((s) => {
+      const newHistory = s.history.filter(r => r.id !== runId)
+      // 如果在活跃列表中也要移除
+      const newRuns = s.activeRuns.filter(r => r.id !== runId)
+      const newWaiting = { ...s.waitingRuns }
+      delete newWaiting[runId]
+      saveHistory(newHistory)
+      return { 
+        history: newHistory,
+        activeRuns: newRuns,
+        waitingRuns: newWaiting,
+        ...computeCompat(newRuns, newWaiting),
+      }
+    })
+    get().addLog('warn', '⏹ 已取消工作流')
   },
 
   addLog: (level, message) => {

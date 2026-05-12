@@ -110,6 +110,7 @@ function TaskRunView() {
   const history = useWorkflowStore(s => s.history)
   const waitingRuns = useWorkflowStore(s => s.waitingRuns)
   const cancelWorkflow = useWorkflowStore(s => s.cancelWorkflow)
+  const removeFromHistory = useWorkflowStore(s => s.removeFromHistory)
   const confirmContinue = useWorkflowStore(s => s.confirmContinue)
   const resumeWorkflow = useWorkflowStore(s => s.resumeWorkflow)
 
@@ -180,15 +181,25 @@ function TaskRunView() {
                   </span>
                   {/* 失败任务显示继续按钮 */}
                   {isFailed && (
-                    <button
-                      onClick={() => resumeWorkflow(run.id)}
-                      className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[0.68rem] font-medium flex-shrink-0"
-                      style={{ backgroundColor: 'var(--color-accent)', color: '#fff' }}
-                      title="继续任务"
-                    >
-                      <RefreshCw size={9} />
-                      继续
-                    </button>
+                    <>
+                      <button
+                        onClick={() => resumeWorkflow(run.id)}
+                        className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[0.68rem] font-medium flex-shrink-0"
+                        style={{ backgroundColor: 'var(--color-accent)', color: '#fff' }}
+                        title="继续任务"
+                      >
+                        <RefreshCw size={9} />
+                        继续
+                      </button>
+                      <button
+                        onClick={() => removeFromHistory(run.id)}
+                        className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[0.68rem] font-medium flex-shrink-0"
+                        style={{ backgroundColor: 'var(--color-border)', color: 'var(--color-text-muted)' }}
+                        title="取消并移除"
+                      >
+                        <X size={9} />
+                      </button>
+                    </>
                   )}
                 </div>
               )
