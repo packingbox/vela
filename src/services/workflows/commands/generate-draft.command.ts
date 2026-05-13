@@ -108,7 +108,7 @@ export class GenerateDraftCommand extends BaseWorkflowCommand {
 
     callbacks.log('调用 AI 生成章节草稿...')
 
-    const draftText = await this.callLLMWithBuilder(promptBuilder, callbacks)
+    const draftText = await this.callLLMWithBuilder(promptBuilder, callbacks, undefined, context)
     const cleanDraftText = this.stripThinkingTags(draftText)
 
     // 落于数据库

@@ -143,7 +143,7 @@ export class RefineFromReviewCommand extends BaseWorkflowCommand<string> {
         endPos: segment.endPos
       })
 
-      const refinedSegment = await this.callLLMWithBuilder(promptBuilder, callbacks)
+      const refinedSegment = await this.callLLMWithBuilder(promptBuilder, callbacks, undefined, context)
       const cleanRefinedSegment = this.stripThinkingTags(refinedSegment)
       
       allRefinedSegments.push(cleanRefinedSegment)

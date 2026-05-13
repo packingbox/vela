@@ -190,6 +190,8 @@ export default function ArchFileViewer({ filePath, content: initialContent }: Pr
       // 通过 EventBus 监听提取完成事件
       const unsub1 = globalEventBus.on('ARCH_POSTPROCESS_UPDATED', () => {
         setExtracting(false)
+        // 刷新角色数据
+        useCharacterStore.getState().loadCharacters()
         unsub1()
         unsub2()
       })

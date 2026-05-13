@@ -33,7 +33,7 @@ export class GenerateFieldCommand extends BaseWorkflowCommand<string> {
     super()
   }
 
-  async execute({ callbacks }: CommandExecuteParams): Promise<string> {
+  async execute({ context: workflowContext, callbacks }: CommandExecuteParams): Promise<string> {
     const project = useProjectStore.getState().currentProject
     if (!project) throw new Error('未打开项目')
 
@@ -43,12 +43,12 @@ export class GenerateFieldCommand extends BaseWorkflowCommand<string> {
     callbacks.log(`🧠 正在为「${label}」生成内容...`)
 
     // 构建上下文摘要（已填写的字段作为参考）
-    const context = this.buildContext(config)
+    const contextStr = this.buildContext(config)
     // 构建针对性 prompt
-    const prompt = this.buildPrompt(config, context)
+    const prompt = this.buildPrompt(config, contextStr)
     const systemPrompt = '你是一位入行十年的顶尖网文主编与白金大神作家，擅长精准设计小说的各项核心配置。'
 
-    const result = await this.callLLM(prompt, systemPrompt, callbacks)
+    const result = await this.callLLM(prompt, systemPrompt, callbacks, undefined, workflowContext)
     const cleanResult = this.stripThinkingTags(result).trim()
 
     if (!cleanResult) {

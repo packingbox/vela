@@ -1,6 +1,7 @@
-import type { WorkflowDefinition, WorkflowContext, StepCallbacks } from '../../stores/workflow-store'
+import type { WorkflowDefinition, WorkflowContext, StepCallbacks, WorkflowStep } from '../../stores/workflow-store'
 import { useLLMStore } from '../../stores/llm-store'
-import { useProjectStore } from '../../stores/project-store'
+import { useWorkflowStore } from '../../stores/workflow-store'
+import { useCharacterStore } from '../../stores/character-store'
 import { getPromptTemplate } from '../prompt-templates'
 import { ipc } from '../ipc-client'
 import type { NovelConfig } from '../../shared/ipc-channels'
@@ -76,7 +77,6 @@ export function createArchitectureWorkflow(params: ArchitectureWorkflowParams = 
     },
     {
       name: '情节大纲',
-      key: 'synopsis',
       description: stepDesc('synopsis', '整合所有碎片，按选定结构模式生成情节大纲'),
       executor: async (step: unknown, context: WorkflowContext, callbacks: StepCallbacks) => {
         context.data.stepGuidance = guidance
@@ -86,92 +86,62 @@ export function createArchitectureWorkflow(params: ArchitectureWorkflowParams = 
     },
   ]
 
-  const finalSteps = allSteps.filter(s => sel.includes(s.key as never))
-
   return {
     type: 'architecture_generation',
-    title: '🏗️ 生成故事架构',
-    steps: finalSteps,
-    onComplete: { mode: 'silent', message: '🏗️ 故事架构已生成完成！前往侧边栏「故事架构」查看' },
-  }
-}
-
-export function createConfigGenerationWorkflow(params: ConfigGenerationWorkflowParams): WorkflowDefinition {
-  return {
-    type: 'config_generation',
-    title: '🧠 AI 生成小说配置',
-    steps: [
-      {
-        name: '智能分析并填充配置',
-        description: `根据创作脑洞生成小说配置（全书规划约 ${params.totalChapters} 章）`,
-        executor: async (step, context, callbacks) => {
-          const { GenerateConfigCommand } = await import('./commands/architecture.command')
-          const cmd = new GenerateConfigCommand(params.idea, params.totalChapters, params.wordsPerChapter, params.onGenerated)
-          return cmd.execute({ step, context, callbacks })
-        },
+    title: '🏛️ AI 生成故事架构',
+    steps: sel.length === 4 
+      ? allSteps 
+      : allSteps.filter(s => sel.includes((s as { key: string }).key as never)),
+    onComplete: {
+      mode: 'open',
+      openResult: async () => {
+        useCharacterStore.getState().loadCharacters()
       },
-    ],
-    onComplete: { mode: 'silent', message: '✅ 小说配置已自动生成完毕，请查阅确认。' },
+    },
   }
 }
 
 // ==========================================
-// 3. 工具与指导文本
+// 3. 辅助函数
 // ==========================================
 
-export function getPlotStructureGuide(structure: string, totalChapters: number): string {
-  const ch20 = Math.round(totalChapters * 0.2)
-  const ch25 = Math.round(totalChapters * 0.25)
-  const ch50 = Math.round(totalChapters * 0.5)
-  const ch75 = Math.round(totalChapters * 0.75)
-
-  switch (structure) {
-    case 'heros_journey':
-      return `【英雄之旅·十二阶段】（严格按以下阶段组织大纲）\n建议章节分配：全书共 ${totalChapters} 章...` // 为了简洁截断，后台已由架构掌控
-    case 'save_the_cat':
-      return `【节拍表·十五拍】（严格按以下节拍组织大纲）\n建议章节分配：全书共 ${totalChapters} 章...`
-    case 'kishotenketsu':
-      return `【起承转合·四段式】（严格按以下四段组织大纲）
-建议章节分配：全书共 ${totalChapters} 章
-起（约第1章~第${ch25}章，占总篇幅约25%）：介绍世界、角色和日常，建立读者认同
-承（约第${ch25 + 1}章~第${ch50}章，占总篇幅约25%）：延续与深化，展现角色关系和冲突苗头
-转（约第${ch50 + 1}章~第${ch75}章，占总篇幅约25%）：核心转折，出人意料的变化打破既有格局
-合（约第${ch75 + 1}章~第${totalChapters}章，占总篇幅约25%）：收束所有线索，揭示主题，给出结局`
-    case 'multi_thread':
-      return `【多线叙事】（按多条故事线并行推进的方式组织大纲）
-建议章节分配：全书共 ${totalChapters} 章
-需要明确以下要素：
-1. 主线数量：设定2-4条独立又交织的故事线，每条有独立主角或视角
-2. 交汇节点：每条线在第${ch25}章、第${ch50}章、第${ch75}章左右安排交汇碰撞
-3. 节奏编排：各线交替出现的节奏，避免某条线长期消失
-4. 最终合流：在第${ch75}章前后所有线索开始汇聚，走向统一高潮`
-    case 'freeform':
-      return `【自由结构】（不限定特定叙事框架，根据故事内容自然编排）
-全书共 ${totalChapters} 章。
-请根据故事类型和内容特点自行设计最合适的叙事节奏。
-核心原则：
-1. 保证每10-20章有一个小高潮或悬念释放点
-2. 全书应有清晰的开篇建置（前10-15%）和收尾段落（后10-15%）
-3. 中段避免节奏单一，适时安排转折点
-4. 允许插叙、倒叙、片段式叙事等灵活手法`
-    case 'three_act':
-    default:
-      return `【三幕结构】（严格按以下结构组织大纲）
-建议章节分配：全书共 ${totalChapters} 章
-第一幕：建置（约第1章~第${ch20}章，占总篇幅约20%）
-第二幕：对抗与发展（约第${ch20 + 1}章~第${ch75}章，占总篇幅约55%）
-第三幕：高潮与结局（约第${ch75 + 1}章~第${totalChapters}章，占总篇幅约25%）`
-  }
-}
-
-export function getNarrativePOVLabel(pov: string): string {
+export function getPOVLabel(pov: string): string {
   const labels: Record<string, string> = {
     first_person: '第一人称',
+    second_person: '第二人称',
     third_limited: '第三人称有限视角',
     third_omniscient: '第三人称全知视角',
     multi_pov: '多视角轮换',
   }
   return labels[pov] || pov
+}
+
+export function getNarrativePOVLabel(pov: string): string {
+  return getPOVLabel(pov)
+}
+
+export function getPlotStructureGuide(structure: string, totalChapters: number): string {
+  const guides: Record<string, (chapters: number) => string> = {
+    three_act: (ch) => {
+      const act1 = Math.floor(ch * 0.25)
+      const act2 = Math.floor(ch * 0.5)
+      const act3 = ch - act1 - act2
+      return `三幕式结构：第一幕(${act1}章)-铺垫引入，第二幕(${act2}章)-冲突升级，第三幕(${act3}章)-高潮解决`
+    },
+    hero_journey: (ch) => {
+      const stages = Math.floor(ch / 12)
+      return `英雄之旅结构：共12阶段，每阶段约${stages}章，包含启程、启蒙、归来三大阶段`
+    },
+    five_act: (ch) => {
+      const act = Math.floor(ch / 5)
+      return `五幕式结构：序幕(${act}章)-起(${act}章)-承(${act}章)-转(${act}章)-合(${ch - act * 4}章)`
+    },
+    save_the_cat: (ch) => {
+      const beats = Math.floor(ch / 15)
+      return `Save the Cat结构：15个节拍，每节拍约${beats}章，含开场画面、主题呈现、铺垫等`
+    },
+  }
+  return guides[structure]?.(totalChapters) || `自定义结构（共${totalChapters}章）`
 }
 
 // ==========================================
@@ -196,42 +166,182 @@ export function createCharacterExtractSteps(_projectPath: string, characterDynam
         const llmStore = useLLMStore.getState()
         cb.appendText('🔍 正在调用 AI 提取角色卡片...\n')
 
-        let fullContent = ''
-        await new Promise<void>((resolve, reject) => {
+        // 使用 Promise 包装流式生成，支持取消
+        const fullContent = await new Promise<string>((resolve, reject) => {
+          let streamRequestId = ''
+          let cancelCheckTimer: ReturnType<typeof setInterval> | null = null
+          let timeoutTimer: ReturnType<typeof setTimeout> | null = null
+          let content = ''
+
+          // 检查取消状态（轮询）
+          cancelCheckTimer = setInterval(() => {
+            const workflowStore = useWorkflowStore.getState()
+            const activeRuns = workflowStore.activeRuns
+            // 检查是否存在包含角色卡提取步骤的活跃工作流
+            const hasActiveExtract = activeRuns.some(r => 
+              r.type === 'post_process' && 
+              r.steps.some((s: WorkflowStep) => s.name === '提取角色卡片')
+            )
+            
+            if (!hasActiveExtract && streamRequestId) {
+              clearInterval(cancelCheckTimer!)
+              if (timeoutTimer) clearTimeout(timeoutTimer)
+              llmStore.cancelGeneration(streamRequestId).catch(() => {})
+              reject(new Error('工作流已取消'))
+            }
+          }, 200)
+
+          // 设置超时：300秒(5分钟)无响应则超时
+          timeoutTimer = setTimeout(() => {
+            if (cancelCheckTimer) clearInterval(cancelCheckTimer)
+            if (streamRequestId) llmStore.cancelGeneration(streamRequestId).catch(() => {})
+            reject(new Error('LLM 请求超时（超过5分钟未响应）'))
+          }, 300000)
+
+          const cleanup = () => {
+            if (cancelCheckTimer) clearInterval(cancelCheckTimer)
+            if (timeoutTimer) clearTimeout(timeoutTimer)
+          }
+
           llmStore.generateStream(
-            [
-              { role: 'system', content: systemRole },
-              { role: 'user', content: extractPrompt }
-            ],
+            [{ role: 'system', content: systemRole }, { role: 'user', content: extractPrompt }],
             {
-              onChunk: (chunk) => { fullContent += chunk; cb.appendText(chunk) },
-              onDone: () => resolve(),
-              onError: (err) => reject(new Error(err))
+              onChunk: (chunk) => {
+                // 检查是否已取消
+                const workflowStore = useWorkflowStore.getState()
+                const activeRuns = workflowStore.activeRuns
+                const hasActiveExtract = activeRuns.some(r => 
+                  r.type === 'post_process' && 
+                  r.steps.some((s: WorkflowStep) => s.name === '提取角色卡片')
+                )
+                if (!hasActiveExtract) return
+                
+                content += chunk
+                cb.appendText(chunk)
+                
+                // 收到数据，重置超时计时器
+                if (timeoutTimer) {
+                  clearTimeout(timeoutTimer)
+                  timeoutTimer = setTimeout(() => {
+                    if (cancelCheckTimer) clearInterval(cancelCheckTimer)
+                    if (streamRequestId) llmStore.cancelGeneration(streamRequestId).catch(() => {})
+                    reject(new Error('LLM 请求超时（超过5分钟未响应）'))
+                  }, 300000)
+                }
+              },
+              onDone: (text) => {
+                cleanup()
+                // 检查是否已取消
+                const workflowStore = useWorkflowStore.getState()
+                const activeRuns = workflowStore.activeRuns
+                const hasActiveExtract = activeRuns.some(r => 
+                  r.type === 'post_process' && 
+                  r.steps.some((s: WorkflowStep) => s.name === '提取角色卡片')
+                )
+                if (!hasActiveExtract) {
+                  reject(new Error('工作流已取消'))
+                  return
+                }
+                resolve(text || content)
+              },
+              onError: (err) => {
+                cleanup()
+                reject(new Error(err || '流式生成失败'))
+              }
             },
             undefined,
             { responseFormat: { type: 'json_object' } }
-          )
+          ).then(reqId => {
+            streamRequestId = reqId
+            // 如果在 generateStream 返回前已经取消
+            const workflowStore = useWorkflowStore.getState()
+            const activeRuns = workflowStore.activeRuns
+            const hasActiveExtract = activeRuns.some(r => 
+              r.type === 'post_process' && 
+              r.steps.some((s: WorkflowStep) => s.name === '提取角色卡片')
+            )
+            if (!hasActiveExtract) {
+              llmStore.cancelGeneration(reqId).catch(() => {})
+              cleanup()
+              reject(new Error('工作流已取消'))
+            }
+          }).catch(err => {
+            cleanup()
+            reject(err)
+          })
         })
 
+        console.log('[DEBUG] AI 原始返回:', fullContent.substring(0, 500))
         const cleanedCards = stripThinkingTags(fullContent)
+        console.log('[DEBUG] 清洗后:', cleanedCards.substring(0, 500))
         const jsonStr = cleanedCards.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-        const parsedCards = JSON.parse(jsonStr) as Array<Record<string, unknown>>
+        console.log('[DEBUG] JSON 字符串:', jsonStr)
+        
+        // 解析 JSON，支持数组或包含数组的对象
+        let parsedCards: Array<Record<string, unknown>> = []
+        try {
+          const parsed = JSON.parse(jsonStr)
+          if (Array.isArray(parsed)) {
+            parsedCards = parsed
+          } else if (typeof parsed === 'object' && parsed !== null) {
+            if (Array.isArray(parsed.characters)) {
+              parsedCards = parsed.characters
+            } else if (Array.isArray(parsed.data)) {
+              parsedCards = parsed.data
+            } else {
+              throw new Error('AI 返回的数据格式不支持，期望数组或包含 characters/data 字段的对象')
+            }
+          } else {
+            throw new Error('AI 返回的数据格式无效，期望数组')
+          }
+        } catch (e) {
+          throw new Error(`解析角色数据失败: ${String(e)}`)
+        }
 
         // 构建角色卡数据列表
         const validRoles = ['protagonist', 'antagonist', 'supporting', 'minor']
         const characterDataList: Array<Record<string, unknown>> = []
         for (const card of parsedCards) {
-          if (!card.name) continue
+          if (!card || typeof card !== 'object' || !card.name) continue
           const role = validRoles.includes(card.role as string) ? card.role : 'supporting'
           characterDataList.push({ ...card, role, name: card.name })
         }
 
-        // 批量写入数据库
-        await ipc.invoke('db:character-save-all', characterDataList as unknown as CharacterData[])
+        // 检查是否提取到有效角色
+        if (characterDataList.length === 0) {
+          throw new Error('未能从角色图谱中提取到任何有效角色，请检查角色图谱内容或重新生成')
+        }
+
+        console.log('[DEBUG] 角色卡提取 - 准备写入数据库:', characterDataList.length, '个角色')
+        const result = await ipc.invoke('db:character-save-all', characterDataList as unknown as CharacterData[])
+        console.log('[DEBUG] 角色卡写入结果:', result)
         cb.log(`✅ 角色卡提取完毕（共 ${characterDataList.length} 个角色）`)
       },
     },
   ]
+}
+
+/** 创建配置生成工作流 */
+export function createConfigGenerationWorkflow(params: ConfigGenerationWorkflowParams): WorkflowDefinition {
+  return {
+    type: 'config_generation',
+    title: '✨ AI 智能配置生成',
+    steps: [
+      {
+        name: '配置生成',
+        description: '根据创作脑洞生成小说配置',
+        executor: async (_step, _context, callbacks) => {
+          const { GenerateConfigCommand } = await import('./commands/architecture.command')
+          return new GenerateConfigCommand(
+            params.idea,
+            params.totalChapters,
+            params.wordsPerChapter,
+            params.onGenerated
+          ).execute({ step: {} as WorkflowStep, context: { data: {}, cancelled: false }, callbacks })
+        },
+      },
+    ],
+  }
 }
 
 export async function runArchCharacterExtract(projectPath: string, characterDynamicsContent: string, genre: string): Promise<void> {
@@ -246,9 +356,8 @@ export async function runArchCharacterExtract(projectPath: string, characterDyna
         description: '从角色图谱中提取并生成角色卡片数据',
         executor: async (_step, _ctx, callbacks) => {
           const { globalEventBus } = await import('../../shared/event-bus')
-          const archStatus = await runPostProcessPipeline(projectPath, ARCH_CHARACTER_SCOPE, '架构-角色图谱', steps, callbacks)
+          const archStatus = await runPostProcessPipeline(projectPath, ARCH_CHARACTER_SCOPE, '架构-角色图谱', steps, callbacks, { onlyFailed: false })
           if (archStatus.allCriticalPassed) {
-            // 角色卡提取成功 → 通过 EventBus 通知 ProjectService 刷新
             globalEventBus.emit('ARCH_POSTPROCESS_UPDATED', {})
           } else {
             globalEventBus.emit('CHARACTER_EXTRACT_FAILED', { error: archStatus.steps.extract_character_cards?.error })
@@ -259,34 +368,3 @@ export async function runArchCharacterExtract(projectPath: string, characterDyna
     ],
   })
 }
-
-export async function repairArchCharacterCards(projectPath: string): Promise<void> {
-  const core = await ipc.invoke('db:project-core-get')
-  if (!core?.charactersArch || core.charactersArch.length < 50) throw new Error('无法提取角色卡')
-
-  const project = useProjectStore.getState().currentProject
-  if (!project) throw new Error('未打开项目')
-
-  const steps = createCharacterExtractSteps(projectPath, core.charactersArch, project.novelConfig.genre)
-  const { useWorkflowStore } = await import('../../stores/workflow-store')
-  await useWorkflowStore.getState().startWorkflow({
-    type: 'post_process',
-    title: '🔧 修复：角色卡提取',
-    steps: [
-      {
-        name: '重试角色卡提取',
-        description: '重试失败的角色卡提取步骤',
-        executor: async (_step, _ctx, callbacks) => {
-          const { globalEventBus } = await import('../../shared/event-bus')
-          const archStatus = await runPostProcessPipeline(projectPath, ARCH_CHARACTER_SCOPE, '架构-角色图谱', steps, callbacks, { onlyFailed: true })
-          if (archStatus.allCriticalPassed) {
-            globalEventBus.emit('ARCH_POSTPROCESS_UPDATED', {})
-          } else {
-            globalEventBus.emit('ARCH_POSTPROCESS_UPDATED', {})
-          }
-        },
-      },
-    ],
-  })
-}
-

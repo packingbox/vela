@@ -55,6 +55,10 @@ export default function App() {
     loadRecentProjects()
     // 初始化 MCP Store
     useMCPStore.getState().init().catch(e => console.warn('[MCP] 初始化失败:', e))
+    // 加载全局自定义 Prompt 模板
+    import('./services/prompt-templates').then(({ loadCustomPrompts }) => {
+      loadCustomPrompts().catch(e => console.warn('[PromptTemplates] 加载失败:', e))
+    })
     if (ipc.isElectron) {
       const savedZoom = localStorage.getItem('vela-zoom-level')
       if (savedZoom) ipc.setZoomLevel(parseFloat(savedZoom))

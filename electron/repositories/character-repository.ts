@@ -170,14 +170,23 @@ export class CharacterRepository {
     /** 批量保存角色（事务） */
     static saveAll(characters: CharacterData[]): void {
         const db = getProjectDb()
-        if (!db) return
+        if (!db) {
+            console.log('[DEBUG] saveAll: 数据库未连接')
+            return
+        }
 
+        console.log('[DEBUG] saveAll: 准备保存', characters.length, '个角色')
         const tx = db.transaction(() => {
             for (const char of characters) {
+                console.log('[DEBUG] upsert:', char.name)
                 CharacterRepository.upsert(char)
             }
         })
         tx()
+        
+        // 验证保存结果
+        const count = (db.prepare('SELECT COUNT(*) as cnt FROM characters').get() as { cnt: number }).cnt
+        console.log('[DEBUG] saveAll: 保存完成，数据库中角色数量:', count)
     }
 
     /** 删除角色 */

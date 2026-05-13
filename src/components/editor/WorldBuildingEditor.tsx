@@ -77,6 +77,8 @@ export default function WorldBuildingEditor() {
       setPostProcessKey(k => k + 1)
       loadCharExtractStatus()
       setExtracting(false)
+      // 刷新角色数据
+      useCharacterStore.getState().loadCharacters()
     })
     const unsub2 = globalEventBus.on('CHARACTER_EXTRACT_FAILED', () => {
       setPostProcessKey(k => k + 1)
@@ -219,7 +221,8 @@ export default function WorldBuildingEditor() {
           const words = wordCounts[f.key] ?? 0
           const isCharacters = f.key === 'characters'
           // 角色图谱卡片：提取失败时显示红色警告
-          const charExtractFailed = isCharacters && charExtractStatus && !charExtractStatus.allCriticalPassed
+          // 两种情况需要警告：1. 后处理标记失败 2. 后处理标记成功但实际角色数为0（可能被删除了）
+          const charExtractFailed = isCharacters && charExtractStatus && (!charExtractStatus.allCriticalPassed || characterCount === 0)
           // 动态边框颜色：提取失败 → 红 | 已生成 → 绿 | 未生成 → 默认
           const cardBorderColor = charExtractFailed
             ? 'var(--color-error, #ef4444)'

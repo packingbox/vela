@@ -11,7 +11,7 @@ import { ipc } from '../../ipc-client'
  * 结果写入 NovelConfig.writingStyle 以锚定后续生成/修稿。
  */
 export class AnalyzeWritingStyleCommand extends BaseWorkflowCommand<string> {
-  async execute({ callbacks }: CommandExecuteParams): Promise<string> {
+  async execute({ context, callbacks }: CommandExecuteParams): Promise<string> {
     const project = useProjectStore.getState().currentProject
     if (!project) throw new Error('未打开项目')
 
@@ -61,6 +61,8 @@ export class AnalyzeWritingStyleCommand extends BaseWorkflowCommand<string> {
       finalPrompt,
       template.systemRole || '你是一位资深的文学评论家和网文研究者。',
       callbacks,
+      undefined,
+      context,
     )
 
     const cleanResult = this.stripThinkingTags(result).trim()

@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react'
-import { Save, Sparkles, Info, Loader2 } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Save, Sparkles, Info, Loader2, Upload, Download } from 'lucide-react'
 import { useProjectStore } from '../../stores/project-store'
 import { useLLMStore } from '../../stores/llm-store'
 import { useWorkflowStore } from '../../stores/workflow-store'
@@ -10,6 +10,9 @@ import { Input } from '../ui/Input'
 import { Textarea } from '../ui/Textarea'
 import { NativeSelect } from '../ui/NativeSelect'
 import GenerateConfigDialog from '../dialogs/GenerateConfigDialog'
+import { getAllPresets, type PromptPreset } from '../../services/prompt-presets'
+import { applyPresetToProject, loadProjectPresetId } from '../../services/prompt-templates'
+import { cn } from '../../lib/utils'
 
 /** 小说配置编辑器 — Tab 内的可视化配置面板 */
 export default function NovelConfigEditor() {
@@ -24,9 +27,31 @@ export default function NovelConfigEditor() {
   const addLog = useWorkflowStore.getState().addLog
   const [saving, setSaving] = useState(false)
   const [showGenerateConfig, setShowGenerateConfig] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 各区块的独立生成状态
   const [generatingField, setGeneratingField] = useState<GeneratableField | null>(null)
+
+  // Prompt 预设相关
+  const [presets, setPresets] = useState<PromptPreset[]>([])
+  const [currentPresetId, setCurrentPresetId] = useState<string | null>(null)
+
+  useEffect(() => {
+    setPresets(getAllPresets())
+    if (currentProject?.path) {
+      loadProjectPresetId(currentProject.path).then(id => {
+        setCurrentPresetId(id)
+      })
+    }
+  }, [currentProject?.path])
+
+  const handlePresetChange = async (presetId: string) => {
+    if (!currentProject?.path) return
+    const ok = await applyPresetToProject(currentProject.path, presetId)
+    if (ok) {
+      setCurrentPresetId(presetId)
+    }
+  }
 
   // 直接从 Store 读取配置 — 单一数据源，无需 local state 镜像
   const config = currentProject?.novelConfig ?? null
@@ -94,6 +119,52 @@ export default function NovelConfigEditor() {
     }
   }
 
+  /** 导出配置到文件 */
+  const handleExport = () => {
+    if (!config) return
+    const data = JSON.stringify(config, null, 2)
+    const blob = new Blob([data], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `novel-config-${Date.now()}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    addLog('info', '📤 小说配置已导出')
+  }
+
+  /** 触发导入文件选择 */
+  const handleImportClick = () => {
+    fileInputRef.current?.click()
+  }
+
+  /** 处理文件导入 */
+  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    try {
+      const text = await file.text()
+      const imported = JSON.parse(text) as Partial<NovelConfig>
+
+      // 验证必要字段
+      if (!imported.genre) {
+        addLog('error', '❌ 导入失败：配置文件缺少 genre 字段')
+        return
+      }
+
+      // 合并导入的配置
+      updateNovelConfig(imported)
+      await saveProject()
+      addLog('info', `📥 已导入小说配置：${imported.genre} - ${imported.subGenre || '未分类'}`)
+    } catch (err) {
+      addLog('error', `❌ 导入失败：${err}`)
+    }
+
+    // 清空文件选择，允许重复选择同一文件
+    e.target.value = ''
+  }
+
   const genres = ['玄幻', '仙侠', '都市', '科幻', '历史', '军事', '游戏', '末世', '悬疑', '灵异', '言情', '古言', '现言', '奇幻', '武侠', '轻小说', '同人', '职场']
 
   return (
@@ -111,7 +182,13 @@ export default function NovelConfigEditor() {
           </div>
           <div className="flex items-center gap-2">
             <Button variant="ai" onClick={handleAIGenerate}>
-              <Sparkles size={13} /> AI 填充配置
+              <Sparkles size={13} /> AI填充配置
+            </Button>
+            <Button variant="outline" onClick={handleImportClick} title="导入配置">
+              <Upload size={13} /> 导入
+            </Button>
+            <Button variant="outline" onClick={handleExport} title="导出配置">
+              <Download size={13} /> 导出
             </Button>
             <Button variant="outline" onClick={handleSave} disabled={saving}>
               <Save size={13} /> {saving ? '保存中...' : '保存'}
@@ -121,6 +198,33 @@ export default function NovelConfigEditor() {
 
         {/* 配置表单 */}
         <div className="space-y-5">
+          {/* Prompt 预设 */}
+          {presets.length > 0 && (
+            <div className="flex items-center gap-3 px-4 py-3 rounded-lg" style={{ backgroundColor: 'var(--color-hover)' }}>
+              <span className="text-xs font-medium flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>Prompt 预设</span>
+              <div className="flex flex-wrap gap-2">
+                {presets.map((preset) => (
+                  <button
+                    key={preset.id}
+                    onClick={() => handlePresetChange(preset.id)}
+                    className={cn(
+                      'px-2.5 py-1 rounded-md text-xs transition-all',
+                      currentPresetId === preset.id
+                        ? 'ring-1 ring-[var(--color-accent)]'
+                        : 'opacity-60 hover:opacity-100'
+                    )}
+                    style={{
+                      backgroundColor: currentPresetId === preset.id ? 'var(--color-accent)' : 'var(--color-panel)',
+                      color: currentPresetId === preset.id ? 'white' : 'var(--color-text)',
+                    }}
+                  >
+                    {preset.emoji} {preset.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* 基本信息 */}
           <Section title="基本信息">
             <div className="grid grid-cols-3 gap-4">
@@ -289,9 +393,15 @@ export default function NovelConfigEditor() {
         isOpen={showGenerateConfig}
         onClose={() => setShowGenerateConfig(false)}
         onGenerated={(parsed) => {
-          // 直接写 Store，组件自动重新渲染
           updateNovelConfig(parsed)
         }}
+      />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json"
+        style={{ display: 'none' }}
+        onChange={handleFileImport}
       />
     </div>
   )

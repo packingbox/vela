@@ -1314,6 +1314,92 @@ export async function deleteProjectCustomPrompt(projectPath: string, key: string
   }
 }
 
+/** 项目当前应用的预设 ID（存储在 .vela/project.json 中） */
+let currentPresetId: string | null = null
+
+/** 获取项目当前应用的预设 ID */
+export function getCurrentPresetId(): string | null {
+  return currentPresetId
+}
+
+/** 设置项目当前应用的预设 ID */
+export function setCurrentPresetId(id: string | null): void {
+  currentPresetId = id
+}
+
+/** 应用预设到项目（将预设的 overrides 写入项目级 prompt） */
+export async function applyPresetToProject(projectPath: string, presetId: string): Promise<boolean> {
+  try {
+    const { getPresetById } = await import('./prompt-presets')
+    const preset = getPresetById(presetId)
+    if (!preset) return false
+
+    // 先清除现有的项目级覆盖
+    projectCustomPrompts.clear()
+
+    // 应用预设的 overrides
+    if (preset.overrides && Object.keys(preset.overrides).length > 0) {
+      for (const [key, content] of Object.entries(preset.overrides)) {
+        const builtinTemplate = BUILTIN_PROMPTS.find(p => p.key === key)
+        if (builtinTemplate) {
+          const template: PromptTemplate = {
+            ...builtinTemplate,
+            content,
+          }
+          await saveProjectCustomPrompt(projectPath, template)
+        }
+      }
+    }
+
+    // 保存预设 ID
+    currentPresetId = presetId
+    await saveProjectPresetId(projectPath, presetId)
+
+    // 重新加载项目自定义模板到内存（确保内存与磁盘同步）
+    await loadProjectCustomPrompts(projectPath)
+
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** 保存项目当前预设 ID 到 .vela/project.json */
+async function saveProjectPresetId(projectPath: string, presetId: string): Promise<void> {
+  try {
+    const { ipc } = await import('./ipc-client')
+    const projectFilePath = `${projectPath}/.vela/project.json`
+    const exists = await ipc.invoke('fs:check-exists', projectFilePath)
+    if (!exists) return
+
+    const result = await ipc.invoke('fs:read-file', projectFilePath)
+    if (!result.success) return
+
+    const projectData = JSON.parse(result.content)
+    projectData.promptPresetId = presetId
+    await ipc.invoke('fs:write-file', projectFilePath, JSON.stringify(projectData, null, 2))
+  } catch { /* ignore */ }
+}
+
+/** 从 .vela/project.json 加载项目预设 ID */
+export async function loadProjectPresetId(projectPath: string): Promise<string | null> {
+  try {
+    const { ipc } = await import('./ipc-client')
+    const projectFilePath = `${projectPath}/.vela/project.json`
+    const exists = await ipc.invoke('fs:check-exists', projectFilePath)
+    if (!exists) return null
+
+    const result = await ipc.invoke('fs:read-file', projectFilePath)
+    if (!result.success) return null
+
+    const projectData = JSON.parse(result.content)
+    currentPresetId = projectData.promptPresetId || null
+    return currentPresetId
+  } catch {
+    return null
+  }
+}
+
 /** 渲染 Prompt 模板（填充变量 + 自动追加内置 systemSuffix + 空段落裁剪） */
 export function renderPrompt(template: PromptTemplate, variables: Record<string, string>): string {
   let content = template.content

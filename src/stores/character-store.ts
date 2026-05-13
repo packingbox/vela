@@ -38,7 +38,7 @@ interface CharacterState {
   saveAll: (projectPath?: string) => Promise<void>
 
   // 兼容旧接口
-  loadCharacters: (projectPath: string) => Promise<void>
+  loadCharacters: (projectPath?: string) => Promise<void>
 }
 
 export const useCharacterStore = create<CharacterState>()((set, get) => ({

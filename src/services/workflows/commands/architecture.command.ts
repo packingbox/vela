@@ -52,7 +52,7 @@ export class GenerateConfigCommand extends BaseWorkflowCommand<string> {
     super()
   }
 
-  async execute({ callbacks }: CommandExecuteParams): Promise<string> {
+  async execute({ context, callbacks }: CommandExecuteParams): Promise<string> {
     callbacks.log('正在调度配置专家 AI，准备解析您的脑洞...')
 
     const template = getPromptTemplate('generate_global_config')
@@ -66,7 +66,8 @@ export class GenerateConfigCommand extends BaseWorkflowCommand<string> {
     const resultRaw = await this.callLLMWithBuilder(
       promptBuilder,
       callbacks,
-      { responseFormat: { type: 'json_object' }, thinking: true }
+      { responseFormat: { type: 'json_object' }, thinking: true },
+      context
     )
 
     callbacks.log('解析完成，正在应用到项目配置...')
