@@ -113,23 +113,36 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   openProject: async (projectPath) => {
     set({ loading: true })
+    console.log(`[Project] 开始打开项目: ${projectPath}`)
+    
     try {
       // 先关闭当前项目（清空 tab 和 Layer 2 Store）
       const currentProject = get().currentProject
       if (currentProject) {
+        console.log('[Project] 关闭当前项目...')
         callProjectClosed()
       }
       
+      console.log('[Project] 调用 IPC project:open...')
       const result = await ipc.invoke('project:open', projectPath)
+      console.log('[Project] IPC 返回:', result.success ? '成功' : `失败 - ${result.error}`)
+      
       if (result.success && result.project) {
         set({ currentProject: result.project })
         // 加载文件树
+        console.log('[Project] 刷新文件树...')
         await get().refreshFileTree()
+        console.log('[Project] 文件树刷新完成')
+        
         // 自动展开侧边栏并切换到项目结构视图
         const { useLayoutStore } = await import('./layout-store')
         useLayoutStore.setState({ sidebarOpen: true, sidebarView: 'project' })
+        
         // 统一初始化 Layer 2 Store（角色卡、草稿等）
+        console.log('[Project] 初始化 Layer 2 Store...')
         await callProjectOpened()
+        console.log('[Project] Layer 2 Store 初始化完成')
+        
         return true
       }
       console.error('[Project] 打开失败:', result.error)
@@ -141,6 +154,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       alertError(String(e), { title: '打开项目异常' })
       return false
     } finally {
+      console.log('[Project] 加载完成，设置 loading=false')
       set({ loading: false })
     }
   },

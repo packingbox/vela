@@ -75,6 +75,15 @@ export function registerDatabaseController() {
     }
   })
 
+  ipcMain.handle('db:blueprint-delete-all', async () => {
+    try {
+      BlueprintRepository.deleteAll()
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: String(err) }
+    }
+  })
+
   // ============================================================
   // 3. characters — 角色卡
   // ============================================================
@@ -103,6 +112,15 @@ export function registerDatabaseController() {
   ipcMain.handle('db:character-delete', async (_event, name: string) => {
     try {
       CharacterRepository.delete(name)
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: String(err) }
+    }
+  })
+
+  ipcMain.handle('db:character-delete-all', async () => {
+    try {
+      CharacterRepository.deleteAll()
       return { success: true }
     } catch (err) {
       return { success: false, error: String(err) }
@@ -175,6 +193,15 @@ export function registerDatabaseController() {
   ipcMain.handle('db:draft-update-content', async (_event, id: number, content: string, wordCount: number) => {
     try {
       DraftRepository.updateContent(id, content, wordCount)
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: String(err) }
+    }
+  })
+
+  ipcMain.handle('db:draft-delete-all', async () => {
+    try {
+      DraftRepository.deleteAll()
       return { success: true }
     } catch (err) {
       return { success: false, error: String(err) }
@@ -312,6 +339,15 @@ ipcMain.handle('db:revision-create', async (_event, params: {
 
   ipcMain.handle('db:post-process-is-all-passed', async (_event, sourceType: string, sourceId: string) => {
     return PostProcessRepository.isAllCriticalPassed(sourceType, sourceId)
+  })
+
+  ipcMain.handle('db:post-process-delete-all', async () => {
+    try {
+      PostProcessRepository.deleteAll()
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: String(err) }
+    }
   })
 
   // ============================================================

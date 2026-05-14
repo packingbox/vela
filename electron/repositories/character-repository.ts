@@ -197,6 +197,14 @@ export class CharacterRepository {
         db.prepare('DELETE FROM characters WHERE name = ?').run(name)
     }
 
+    /** 删除所有角色 */
+    static deleteAll(): void {
+        const db = getProjectDb()
+        if (!db) return
+
+        db.prepare('DELETE FROM characters').run()
+    }
+
     /** 仅更新角色动态状态（后处理时使用） */
     static updateState(name: string, state: CharacterStateData): void {
         const db = getProjectDb()

@@ -210,4 +210,18 @@ export class DraftRepository {
             try { ContentRepository.delete(meta.contentId) } catch { /* 被外键保护 */ }
         }
     }
+
+    /** 删除所有草稿（包括 revisions、reviews 和 contents） */
+    static deleteAll(): void {
+        const db = getProjectDb()
+        if (!db) return
+
+        const tx = db.transaction(() => {
+            // 先删除所有草稿（这会通过外键约束级联删除 revisions 和 reviews）
+            db.prepare('DELETE FROM drafts').run()
+            // 然后删除所有孤立的 contents（由于外键约束，仍在被引用的不会被删）
+            db.prepare('DELETE FROM contents WHERE id NOT IN (SELECT content_id FROM drafts UNION SELECT content_id FROM revisions UNION SELECT content_id FROM reviews)').run()
+        })
+        tx()
+    }
 }

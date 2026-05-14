@@ -73,51 +73,96 @@ export class GenerateFieldCommand extends BaseWorkflowCommand<string> {
     if (config.targetAudience) parts.push(`- 目标受众：${config.targetAudience}`)
     if (config.totalChapters) parts.push(`- 总章数：${config.totalChapters} 章`)
     if (config.wordsPerChapter) parts.push(`- 每章字数：${config.wordsPerChapter} 字`)
-    if (config.coreOutline?.trim() && this.fieldKey !== 'coreOutline')
-      parts.push(`- 核心大纲：${config.coreOutline.slice(0, 500)}`)
-    if (config.worldSetting?.trim() && this.fieldKey !== 'worldSetting')
-      parts.push(`- 世界观设定：${config.worldSetting.slice(0, 500)}`)
-    if (config.goldenFinger?.trim() && this.fieldKey !== 'goldenFinger')
-      parts.push(`- 金手指体系：${config.goldenFinger.slice(0, 500)}`)
-    if (config.protagonistProfile?.trim() && this.fieldKey !== 'protagonistProfile')
-      parts.push(`- 主角人设：${config.protagonistProfile.slice(0, 500)}`)
-    if (config.globalGuidance?.trim() && this.fieldKey !== 'globalGuidance')
-      parts.push(`- 全局写作要求：${config.globalGuidance.slice(0, 500)}`)
+    if (config.coreOutline?.trim())
+      parts.push(`- 核心大纲：${config.coreOutline.slice(0, 800)}`)
+    if (config.worldSetting?.trim())
+      parts.push(`- 世界观设定：${config.worldSetting.slice(0, 800)}`)
+    if (config.goldenFinger?.trim())
+      parts.push(`- 金手指体系：${config.goldenFinger.slice(0, 800)}`)
+    if (config.protagonistProfile?.trim())
+      parts.push(`- 主角人设：${config.protagonistProfile.slice(0, 800)}`)
+    if (config.globalGuidance?.trim())
+      parts.push(`- 全局写作要求：${config.globalGuidance.slice(0, 800)}`)
     if (config.referenceWorks?.trim())
       parts.push(`- 参考作品：${config.referenceWorks}`)
-    if (config.writingStyle?.trim() && this.fieldKey !== 'writingStyle')
-      parts.push(`- 文风描述：${config.writingStyle.slice(0, 300)}`)
+    if (config.writingStyle?.trim())
+      parts.push(`- 文风描述：${config.writingStyle.slice(0, 500)}`)
     return parts.length > 0 ? parts.join('\n') : '（尚未填写任何配置）'
   }
 
   /** 根据 fieldKey 构建针对性 prompt */
   private buildPrompt(config: NovelConfig, context: string): string {
+    const existingContent = this.getExistingContent(config)
     const fieldPrompts: Record<GeneratableField, string> = {
-      coreOutline: `请为这部小说生成一份【核心大纲】。
+      coreOutline: existingContent
+        ? `请基于以下已有【核心大纲】进行优化、深化与扩展。
+已有大纲：\n${existingContent}\n
+要求：
+- 保留原有核心框架不变
+- 增强戏剧张力，补充更多细节
+- 不少于300字，结构更完整
+- 重点补充：主角的致命危机/开局困境、终极大危机、主要爽点起伏`
+        : `请为这部小说生成一份【核心大纲】。
 要求：不少于150字，包含主角的致命危机/开局困境、必须完成的核心目标、终极大危机、主要爽点起伏。
 大纲应具有强烈的戏剧张力和商业吸引力，让编辑一看就知道这本书的核心卖点。`,
 
-      worldSetting: `请为这部小说生成一份【世界观/初始设定】。
+      worldSetting: existingContent
+        ? `请基于以下已有【世界观设定】进行优化、深化与扩展。
+已有世界观：\n${existingContent}\n
+要求：
+- 保留原有核心设定不变
+- 深化冲突点，补充更多层次
+- 重点扩展：物理维度特征、权力结构、核心资源争夺机制
+- 设定必须自带冲突点，能直接驱动情节发展`
+        : `请为这部小说生成一份【世界观/初始设定】。
 要求：描述故事发生的背景、时代、力量体系、社会结构。
 包含：物理维度特征、权力结构与断层、核心资源争夺机制。
 所有设定必须自带冲突点，能直接驱动情节发展。`,
 
-      goldenFinger: `请为这部小说生成一份【金手指/核心卖点体系】。
+      goldenFinger: existingContent
+        ? `请基于以下已有【金手指/核心卖点体系】进行优化与扩展。
+已有金手指：\n${existingContent}\n
+要求：
+- 保留原有核心机制不变
+- 深化与世界观规则的交互
+- 重点补充：获取方式、进阶成长路径、副作用/限制/代价`
+        : `请为这部小说生成一份【金手指/核心卖点体系】。
 要求：详细描述主角的差异化优势。
 包含：获取方式、具体功能与核心机制、进阶成长路径、副作用/限制/代价。
 金手指必须与世界观规则产生有趣的交互，而非万能型。`,
 
-      protagonistProfile: `请为这部小说生成一份【主角人设档案】。
+      protagonistProfile: existingContent
+        ? `请基于以下已有【主角人设档案】进行优化与深化。
+已有主角人设：\n${existingContent}\n
+要求：
+- 保留原有性格特质不变
+- 深化角色层次，补充更多细节
+- 重点完善：表面伪装与真实性格的反差、核心驱动力、成长弧光`
+        : `请为这部小说生成一份【主角人设档案】。
 要求：包含表面伪装标签与真实性格、极具反差的性格弱点。
 核心驱动力需要区分物质目标（显性）和深层灵魂渴望（隐性）。
 主角必须有清晰的成长弧光起点和终点。`,
 
-      globalGuidance: `请为这部小说生成一份【全局写作要求】。
+      globalGuidance: existingContent
+        ? `请基于以下已有【全局写作要求】进行优化与完善。
+已有写作要求：\n${existingContent}\n
+要求：
+- 保留原有风格指导不变
+- 补充更具体的节奏把控与禁忌说明
+- 严格基于${config.totalChapters || 100}章的实际规模推算`
+        : `请为这部小说生成一份【全局写作要求】。
 要求：严格基于${config.totalChapters || 100}章的实际规模推算。
 包含：前/中/后期各占多少章、小/中/大高潮的具体章节频率。
 明确写作风格要求、核心禁忌/毒点、节奏控制策略。`,
 
-      writingStyle: `请为这部小说设计一份【文风配置指南】。
+      writingStyle: existingContent
+        ? `请基于以下已有【文风配置指南】进行优化与细化。
+已有文风配置：\n${existingContent}\n
+要求：
+- 保留原有风格基调不变
+- 补充更具体、可操作的写作指导
+- 从叙述节奏、描写密度、对话风格、用词偏好、情感基调等维度深化`
+        : `请为这部小说设计一份【文风配置指南】。
 要求：不少于100字，这份指南将指导 AI 写稿和修稿时的文风遵循。
 请从以下维度给出具体、可操作的风格要求：
 1. 叙述节奏：整体快慢偏好、场景切换频率、段落长短
@@ -138,5 +183,22 @@ ${fieldPrompts[this.fieldKey]}
 - 直接输出纯文本内容，不要使用 JSON 格式
 - 不要添加任何前导语、解释或客套话
 - 不要使用 Markdown 标题（#），可以使用换行分段`
+  }
+
+  /** 获取当前字段的已有内容 */
+  private getExistingContent(config: NovelConfig): string {
+    const fieldMap: Record<GeneratableField, keyof NovelConfig | undefined> = {
+      coreOutline: 'coreOutline',
+      worldSetting: 'worldSetting',
+      goldenFinger: 'goldenFinger',
+      protagonistProfile: 'protagonistProfile',
+      globalGuidance: 'globalGuidance',
+      writingStyle: 'writingStyle',
+    }
+    const field = fieldMap[this.fieldKey]
+    if (!field) return ''
+    const value = config[field]
+    if (typeof value !== 'string' || !value.trim()) return ''
+    return value.trim()
   }
 }

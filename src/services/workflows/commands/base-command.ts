@@ -116,6 +116,13 @@ export abstract class BaseWorkflowCommand<TResult = string> {
             callbacks.setProgress(90)
             const raw = text || fullContent
             const cleaned = this.stripThinkingTags(raw)
+            
+            // 检测空返回（可能是内容审查导致）
+            if (!cleaned || cleaned.trim().length === 0) {
+              reject(new Error('LLM 返回空内容（可能是内容审查或模型限制）'))
+              return
+            }
+            
             resolve(cleaned)
           },
           onError: (err) => {

@@ -26,8 +26,8 @@ export default function DirectoryConfigDialog({ isOpen, onClose, existingCount, 
 
   // 范围选择
   const [rangeMode, setRangeMode] = useState<'front' | 'range' | 'full'>('front')
-  // 覆盖/追加模式选择 (仅当 existingCount > 0 时有效)
-  const [overwriteMode, setOverwriteMode] = useState<'append' | 'full'>('append')
+  // 覆盖/追加/补全模式选择 (仅当 existingCount > 0 时有效)
+  const [overwriteMode, setOverwriteMode] = useState<'append' | 'fill' | 'full'>('append')
 
   const [frontN, setFrontN] = useState<number | ''>(50)
   const [rangeStart, setRangeStart] = useState<number | ''>(existingCount + 1)
@@ -49,7 +49,10 @@ export default function DirectoryConfigDialog({ isOpen, onClose, existingCount, 
 
     let params: DirectoryWorkflowParams
 
-    if (rangeMode === 'full') {
+    // 补全模式：自动检测缺失章节
+    if (overwriteMode === 'fill') {
+      params = { mode: 'fill', count: 0 }
+    } else if (rangeMode === 'full') {
       params = { mode: overwriteMode === 'full' ? 'full' : 'append', count: 0 }
     } else if (rangeMode === 'front') {
       if (existingCount > 0 && overwriteMode === 'append') {
@@ -65,7 +68,7 @@ export default function DirectoryConfigDialog({ isOpen, onClose, existingCount, 
 
     onConfirm({ ...params, pacingGuidance: pacingGuidance.trim() || undefined })
     onClose()
-    toast.info('✨ 已提交：正在生成章节蓝图...')
+    toast.info(params.mode === 'fill' ? '🔧 已提交：正在检测并补全缺失章节...' : '✨ 已提交：正在生成章节蓝图...')
   }
 
   return (
@@ -167,6 +170,11 @@ export default function DirectoryConfigDialog({ isOpen, onClose, existingCount, 
                   checked={overwriteMode === 'append'}
                   onChange={() => setOverwriteMode('append')}
                   label={`追加模式：保留现有蓝图，从第 ${existingCount + 1} 章起往后生成`}
+                />
+                <RadioOption
+                  checked={overwriteMode === 'fill'}
+                  onChange={() => setOverwriteMode('fill')}
+                  label={`🔧 补全模式：自动检测并补全缺失的章节蓝图`}
                 />
                 <RadioOption
                   checked={overwriteMode === 'full'}

@@ -113,6 +113,7 @@ function TaskRunView() {
   const removeFromHistory = useWorkflowStore(s => s.removeFromHistory)
   const confirmContinue = useWorkflowStore(s => s.confirmContinue)
   const resumeWorkflow = useWorkflowStore(s => s.resumeWorkflow)
+  const clearHistory = useWorkflowStore(s => s.clearHistory)
 
   console.log('[BottomPanel] TaskRunView render: activeRuns=', activeRuns.map(r => r.id.slice(0,8) + ':' + r.status + ':' + r.steps.map(s=>s.status).join('/')))
 
@@ -150,8 +151,19 @@ function TaskRunView() {
       {/* 历史记录（简表） */}
       {history.length > 0 && (
         <div className="flex-shrink-0">
-          <div className="px-4 pt-3 pb-1 text-[0.68rem] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
-            历史任务
+          <div className="flex items-center justify-between px-4 pt-3 pb-1">
+            <span className="text-[0.68rem] font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+              历史任务
+            </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={clearHistory}
+              title="清空历史任务"
+              className="h-6 w-6"
+            >
+              <Trash2 size={12} />
+            </Button>
           </div>
           <div className="px-2 pb-2">
             {history.map((run) => {

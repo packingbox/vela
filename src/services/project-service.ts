@@ -125,11 +125,27 @@ export async function onProjectOpened(): Promise<void> {
   const project = useProjectStore.getState().currentProject
   if (!project) return
 
+  console.log('[ProjectService] 开始加载 Layer 2 数据...')
+
   // 并行加载角色卡和草稿列表
-  await Promise.all([
-    useCharacterStore.getState().load(),
-    useDraftStore.getState().loadAllDrafts(),
+  const [charResult, draftResult] = await Promise.all([
+    useCharacterStore.getState().load().then(() => {
+      console.log('[ProjectService] 角色卡加载完成')
+      return 'characters_ok'
+    }).catch((e) => {
+      console.error('[ProjectService] 角色卡加载失败:', e)
+      return 'characters_error'
+    }),
+    useDraftStore.getState().loadAllDrafts().then(() => {
+      console.log('[ProjectService] 草稿列表加载完成')
+      return 'drafts_ok'
+    }).catch((e) => {
+      console.error('[ProjectService] 草稿列表加载失败:', e)
+      return 'drafts_error'
+    }),
   ])
+
+  console.log(`[ProjectService] Layer 2 加载结果: characters=${charResult}, drafts=${draftResult}`)
 
   // 广播项目已就绪事件
   globalEventBus.emit('PROJECT_CHANGED', { projectPath: project.path })

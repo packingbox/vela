@@ -258,12 +258,14 @@ export interface DatabaseChannels {
   'db:blueprint-upsert': { args: [data: BlueprintData]; return: { success: boolean; error?: string } }
   'db:blueprint-upsert-many': { args: [items: BlueprintData[]]; return: { success: boolean; error?: string } }
   'db:blueprint-update-notes': { args: [chapterNumber: number, notes: string]; return: { success: boolean; error?: string } }
+  'db:blueprint-delete-all': { args: []; return: { success: boolean; error?: string } }
 
   // 3. characters
   'db:character-get-all': { args: []; return: CharacterData[] }
   'db:character-upsert': { args: [data: CharacterData]; return: { success: boolean; error?: string } }
   'db:character-save-all': { args: [items: CharacterData[]]; return: { success: boolean; error?: string } }
   'db:character-delete': { args: [name: string]; return: { success: boolean; error?: string } }
+  'db:character-delete-all': { args: []; return: { success: boolean; error?: string } }
   'db:character-update-state': { args: [name: string, state: CharacterStateData]; return: { success: boolean; error?: string } }
 
   // 4. drafts
@@ -277,6 +279,7 @@ export interface DatabaseChannels {
   'db:draft-next-version': { args: [chapterNumber: number]; return: number }
   'db:draft-update-status': { args: [id: number, status: string, wordCount?: number]; return: { success: boolean; error?: string } }
   'db:draft-update-content': { args: [id: number, content: string, wordCount: number]; return: { success: boolean; error?: string } }
+  'db:draft-delete-all': { args: []; return: { success: boolean; error?: string } }
 
   // 5. revisions
   'db:revision-create': { args: [params: { baseDraftId: number; revisionIndex: number; revisionType: 'refine' | 'review-fix'; userPrompt?: string; reviewSourceId?: number; content: string; wordCount: number }]; return: { success: boolean; id?: number; error?: string } }
@@ -301,6 +304,7 @@ export interface DatabaseChannels {
   'db:post-process-mark-step-ok': { args: [runId: string, stepKey: string]; return: { success: boolean; error?: string } }
   'db:post-process-mark-step-failed': { args: [runId: string, stepKey: string, errorMsg: string]; return: { success: boolean; error?: string } }
   'db:post-process-is-all-passed': { args: [sourceType: string, sourceId: string]; return: boolean }
+  'db:post-process-delete-all': { args: []; return: { success: boolean; error?: string } }
 
   // 沿用旧表
   'db:log-llm-call': { args: [call: Record<string, unknown>]; return: { success: boolean } }

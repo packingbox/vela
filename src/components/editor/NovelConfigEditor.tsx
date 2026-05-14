@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Save, Sparkles, Info, Loader2, Upload, Download } from 'lucide-react'
+import { Save, Sparkles, Info, Loader2, Upload, Download, Edit3 } from 'lucide-react'
 import { useProjectStore } from '../../stores/project-store'
 import { useLLMStore } from '../../stores/llm-store'
 import { useWorkflowStore } from '../../stores/workflow-store'
@@ -10,6 +10,7 @@ import { Input } from '../ui/Input'
 import { Textarea } from '../ui/Textarea'
 import { NativeSelect } from '../ui/NativeSelect'
 import GenerateConfigDialog from '../dialogs/GenerateConfigDialog'
+import ConfigFieldEditorDialog from '../dialogs/ConfigFieldEditorDialog'
 import { getAllPresets, type PromptPreset } from '../../services/prompt-presets'
 import { applyPresetToProject, loadProjectPresetId } from '../../services/prompt-templates'
 import { cn } from '../../lib/utils'
@@ -31,6 +32,9 @@ export default function NovelConfigEditor() {
 
   // 各区块的独立生成状态
   const [generatingField, setGeneratingField] = useState<GeneratableField | null>(null)
+
+  // 字段编辑对话框状态
+  const [editingField, setEditingField] = useState<{ key: GeneratableField; name: string; desc?: string } | null>(null)
 
   // Prompt 预设相关
   const [presets, setPresets] = useState<PromptPreset[]>([])
@@ -312,6 +316,7 @@ export default function NovelConfigEditor() {
             aiFieldKey="coreOutline"
             generatingField={generatingField}
             onAIGenerate={handleFieldGenerate}
+            onEdit={(key, name, desc) => setEditingField({ key, name, desc })}
           >
             <Textarea value={config.coreOutline} onChange={(e) => update('coreOutline', e.target.value)} placeholder="在此输入你的创作想法，或让 AI 根据这段话一键生成全部配置..." rows={4} />
           </Section>
@@ -323,6 +328,7 @@ export default function NovelConfigEditor() {
             aiFieldKey="worldSetting"
             generatingField={generatingField}
             onAIGenerate={handleFieldGenerate}
+            onEdit={(key, name, desc) => setEditingField({ key, name, desc })}
           >
             <Textarea value={config.worldSetting} onChange={(e) => update('worldSetting', e.target.value)} placeholder="描述故事发生的背景、时代、力量体系、社会结构（可简写，AI 生成架构时会自动丰富）..." rows={4} />
           </Section>
@@ -334,6 +340,7 @@ export default function NovelConfigEditor() {
             aiFieldKey="goldenFinger"
             generatingField={generatingField}
             onAIGenerate={handleFieldGenerate}
+            onEdit={(key, name, desc) => setEditingField({ key, name, desc })}
           >
             <Textarea value={config.goldenFinger} onChange={(e) => update('goldenFinger', e.target.value)} placeholder="主角的独特优势或故事核心卖点（可简写，架构生成时AI会深度扩展）..." rows={3} />
           </Section>
@@ -345,6 +352,7 @@ export default function NovelConfigEditor() {
             aiFieldKey="protagonistProfile"
             generatingField={generatingField}
             onAIGenerate={handleFieldGenerate}
+            onEdit={(key, name, desc) => setEditingField({ key, name, desc })}
           >
             <Textarea value={config.protagonistProfile} onChange={(e) => update('protagonistProfile', e.target.value)} placeholder="主角的性格特征、背景故事、核心目标..." rows={4} />
           </Section>
@@ -356,6 +364,7 @@ export default function NovelConfigEditor() {
             aiFieldKey="globalGuidance"
             generatingField={generatingField}
             onAIGenerate={handleFieldGenerate}
+            onEdit={(key, name, desc) => setEditingField({ key, name, desc })}
           >
             <Textarea
               value={config.globalGuidance}
@@ -372,6 +381,7 @@ export default function NovelConfigEditor() {
             aiFieldKey="writingStyle"
             generatingField={generatingField}
             onAIGenerate={handleFieldGenerate}
+            onEdit={(key, name, desc) => setEditingField({ key, name, desc })}
           >
             <Textarea
               value={config.writingStyle || ''}
@@ -396,6 +406,21 @@ export default function NovelConfigEditor() {
           updateNovelConfig(parsed)
         }}
       />
+
+      {/* 字段编辑对话框 */}
+      {editingField && (
+        <ConfigFieldEditorDialog
+          fieldKey={editingField.key}
+          fieldName={editingField.name}
+          fieldDesc={editingField.desc}
+          value={config?.[editingField.key] || ''}
+          isOpen={!!editingField}
+          onClose={() => setEditingField(null)}
+          onSave={(value) => update(editingField.key, value)}
+          onAIGenerate={handleFieldGenerate}
+        />
+      )}
+
       <input
         ref={fileInputRef}
         type="file"
@@ -407,7 +432,7 @@ export default function NovelConfigEditor() {
   )
 }
 
-/** 表单分组 — 支持右上角 AI 生成按钮 */
+/** 表单分组 — 支持右上角 AI 生成按钮和独立编辑 */
 function Section({
   title,
   desc,
@@ -415,44 +440,69 @@ function Section({
   aiFieldKey,
   generatingField,
   onAIGenerate,
+  onEdit,
 }: {
   title: string
   desc?: string
   children: React.ReactNode
-  /** 对应 NovelConfig 中的字段 key，传入则显示 AI 生成按钮 */
+  /** 对应 NovelConfig 中的字段 key，传入则显示 AI 生成按钮和编辑按钮 */
   aiFieldKey?: GeneratableField
   /** 当前正在生成的字段（全局共享状态，防止并发） */
   generatingField?: GeneratableField | null
   /** AI 生成回调 */
   onAIGenerate?: (fieldKey: GeneratableField) => void
+  /** 独立编辑回调 */
+  onEdit?: (fieldKey: GeneratableField, title: string, desc?: string) => void
 }) {
   const isGenerating = aiFieldKey != null && generatingField === aiFieldKey
   const isAnyGenerating = generatingField != null
   const showAIButton = aiFieldKey != null && onAIGenerate != null
+  const showEditButton = aiFieldKey != null && onEdit != null
 
   return (
-    <div className="p-4 rounded-xl bg-[var(--color-sidebar)] border border-[var(--color-border)]">
+    <div
+      className="p-4 rounded-xl bg-[var(--color-sidebar)] border border-[var(--color-border)] transition-all cursor-pointer hover:border-[var(--color-accent)]"
+      onClick={() => showEditButton && onEdit(aiFieldKey, title, desc)}
+    >
       <div className="flex items-start justify-between mb-3">
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold text-[var(--color-text)]">{title}</h3>
           {desc && <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{desc}</p>}
         </div>
-        {showAIButton && (
-          <Button
-            variant="ai"
-            size="sm"
-            onClick={() => onAIGenerate(aiFieldKey)}
-            disabled={isAnyGenerating}
-            className="flex-shrink-0 ml-3"
-            title={isGenerating ? '正在生成...' : `AI 生成「${title}」`}
-          >
-            {isGenerating
-              ? <Loader2 size={11} className="animate-spin" />
-              : <Sparkles size={11} />
-            }
-            {isGenerating ? '生成中...' : 'AI 生成'}
-          </Button>
-        )}
+        <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+          {showEditButton && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                onEdit(aiFieldKey, title, desc)
+              }}
+              className="hover:bg-[var(--color-accent)] hover:text-white"
+              title="独立编辑"
+            >
+              <Edit3 size={11} />
+            </Button>
+          )}
+          {showAIButton && (
+            <Button
+              variant="ai"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                onAIGenerate(aiFieldKey)
+              }}
+              disabled={isAnyGenerating}
+              title={isGenerating ? '正在生成...' : `AI 生成「${title}」`}
+            >
+              {isGenerating
+                ? <Loader2 size={11} className="animate-spin" />
+                : <Sparkles size={11} />
+              }
+              {isGenerating ? '生成中...' : 'AI 生成'}
+            </Button>
+          )}
+        </div>
       </div>
       {children}
     </div>

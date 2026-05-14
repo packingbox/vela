@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Wifi, BookOpen, CheckCircle2, FolderOpen } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Wifi, BookOpen, CheckCircle2, FolderOpen, ChevronDown, Settings } from 'lucide-react'
 import { useProjectStore } from '../../stores/project-store'
 import { useLLMStore } from '../../stores/llm-store'
 import { useLayoutStore } from '../../stores/layout-store'
@@ -10,10 +10,42 @@ export default function StatusBar() {
   const currentProject = useProjectStore((s) => s.currentProject)
   const models = useLLMStore(s => s.models)
   const defaultModelId = useLLMStore(s => s.defaultModelId)
+  const setDefaultModel = useLLMStore(s => s.setDefaultModel)
   const openSettings = useLayoutStore(s => s.openSettings)
+  const [showModelDropdown, setShowModelDropdown] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  
   const defaultModel = models.find(
     (m) => m.id === defaultModelId && m.purposes?.some((p) => p !== 'embedding')
   )
+  
+  // 获取可用的非嵌入模型列表
+  const availableModels = models.filter(
+    (m) => m.purposes?.some((p) => p !== 'embedding')
+  )
+  
+  // 点击外部关闭下拉菜单
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowModelDropdown(false)
+      }
+    }
+    
+    if (showModelDropdown) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+    
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showModelDropdown])
+  
+  // 选择模型
+  const handleSelectModel = useCallback((modelId: string) => {
+    setDefaultModel(modelId)
+    setShowModelDropdown(false)
+  }, [setDefaultModel])
 
   return (
     <div
@@ -61,13 +93,119 @@ export default function StatusBar() {
         <AITaskCapsule />
 
         {defaultModel ? (
-          <StatusBarSegment
-            title={`当前模型：${defaultModel.name}`}
-            onClick={openSettings}
-          >
-            <Wifi size={11} />
-            <span className="opacity-80 max-w-[120px] truncate">{defaultModel.name}</span>
-          </StatusBarSegment>
+          <div className="relative" ref={dropdownRef}>
+            <StatusBarSegment
+              title={`当前模型：${defaultModel.name}（点击切换）`}
+              onClick={() => setShowModelDropdown(!showModelDropdown)}
+            >
+              <Wifi size={11} />
+              <span className="opacity-80 max-w-[120px] truncate">{defaultModel.name}</span>
+              <ChevronDown size={10} />
+            </StatusBarSegment>
+            
+            {showModelDropdown && (
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: '100%',
+                  right: 0,
+                  marginBottom: 4,
+                  backgroundColor: 'var(--color-panel)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-md)',
+                  boxShadow: 'var(--shadow-lg)',
+                  minWidth: 180,
+                  zIndex: 1000,
+                  overflow: 'hidden',
+                }}
+              >
+                {availableModels.map((model) => (
+                  <button
+                    key={model.id}
+                    onClick={() => handleSelectModel(model.id)}
+                    style={{
+                      width: '100%',
+                      padding: '6px 12px',
+                      textAlign: 'left',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      fontSize: '0.75rem',
+                      color: defaultModelId === model.id 
+                        ? 'var(--color-accent)' 
+                        : 'var(--color-text)',
+                      hover: {
+                        backgroundColor: 'var(--color-hover)',
+                      },
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'var(--color-hover)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'transparent'
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        backgroundColor: defaultModelId === model.id 
+                          ? 'var(--color-accent)' 
+                          : 'transparent',
+                        border: `1px solid ${defaultModelId === model.id 
+                          ? 'var(--color-accent)' 
+                          : 'var(--color-border)'}`,
+                      }}
+                    />
+                    <span className="truncate">{model.name}</span>
+                  </button>
+                ))}
+                
+                {/* 分割线 */}
+                <div
+                  style={{
+                    height: 1,
+                    backgroundColor: 'var(--color-border)',
+                    margin: '4px 0',
+                  }}
+                />
+                
+                {/* 打开设置 */}
+                <button
+                  onClick={() => {
+                    setShowModelDropdown(false)
+                    openSettings()
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '6px 12px',
+                    textAlign: 'left',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontSize: '0.75rem',
+                    color: 'var(--color-text-secondary)',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'var(--color-hover)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent'
+                  }}
+                >
+                  <Settings size={12} />
+                  <span>模型设置</span>
+                </button>
+              </div>
+            )}
+          </div>
         ) : (
           <StatusBarSegment
             title="点击配置模型"

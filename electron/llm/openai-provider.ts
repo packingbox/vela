@@ -110,6 +110,7 @@ export class OpenAIProvider implements ILLMProvider {
       const decoder = new TextDecoder()
       let fullText = ''
       let isThinking = false
+      let usage: { promptTokens: number; completionTokens: number; totalTokens: number } | undefined
 
       const hasMore = true
       while (hasMore) {
@@ -117,15 +118,41 @@ export class OpenAIProvider implements ILLMProvider {
         if (done) break
 
         const text = decoder.decode(value, { stream: true })
-        const lines = text.split('\n').filter((l) => l.startsWith('data: '))
-
+        const lines = text.split('\n')
+        
         for (const line of lines) {
-          const json = line.slice(6).trim()
+          const trimmed = line.trim()
+          
+          // 处理 DeepSeek 的 keep-alive 机制：
+          // 1. 空行 - 保持 TCP 连接不会因超时中断（非流式请求）
+          // 2. SSE 注释行（以 : 开头） - 如 ": keep-alive"（流式请求）
+          if (!trimmed || trimmed.startsWith(':')) {
+            continue
+          }
+          
+          // 只处理 data: 开头的行
+          if (!trimmed.startsWith('data: ')) {
+            continue
+          }
+          
+          const json = trimmed.slice(6).trim()
           if (json === '[DONE]') continue
+          
           try {
             const parsed = JSON.parse(json) as {
               choices: Array<{ delta: { content?: string, reasoning_content?: string } }>
+              usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
             }
+            
+            // 提取 usage 信息（某些 API 在流式响应中会返回）
+            if (parsed.usage) {
+              usage = {
+                promptTokens: parsed.usage.prompt_tokens,
+                completionTokens: parsed.usage.completion_tokens,
+                totalTokens: parsed.usage.total_tokens,
+              }
+            }
+            
             const delta = parsed.choices?.[0]?.delta
 
             let emitChunk = ''
@@ -166,7 +193,7 @@ export class OpenAIProvider implements ILLMProvider {
         opts.onChunk(closeTag)
       }
 
-      opts.onDone(fullText.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim())
+      opts.onDone(fullText.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '').trim(), usage)
     } catch (error) {
       if ((error as Error).name === 'AbortError') {
         opts.onError('已取消生成')

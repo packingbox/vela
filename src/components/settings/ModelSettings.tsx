@@ -188,7 +188,7 @@ function ModelForm({
 
       <div>
         <Label>模型名称</Label>
-        <Input value={model.modelName} onChange={(e) => update('modelName', e.target.value)} placeholder="gpt-4o / deepseek-chat" />
+        <Input value={model.modelName} onChange={(e) => update('modelName', e.target.value)} placeholder="gpt-4o / deepseek-v4-flash" />
       </div>
       <div>
         <Label>API 地址</Label>

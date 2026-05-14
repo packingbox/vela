@@ -145,6 +145,14 @@ export class BlueprintRepository {
         db.prepare('DELETE FROM blueprints WHERE chapter_number = ?').run(chapterNumber)
     }
 
+    /** 删除所有蓝图 */
+    static deleteAll(): void {
+        const db = getProjectDb()
+        if (!db) return
+
+        db.prepare('DELETE FROM blueprints').run()
+    }
+
     /** 仅更新 notes 字段 */
     static updateNotes(chapterNumber: number, notes: string): void {
         const db = getProjectDb()

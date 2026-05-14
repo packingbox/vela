@@ -180,4 +180,16 @@ export class PostProcessRepository {
         const run = PostProcessRepository.getLatestRun(sourceType, sourceId)
         return run?.allCriticalPassed ?? false
     }
+
+    /** 删除所有后处理记录 */
+    static deleteAll(): void {
+        const db = getProjectDb()
+        if (!db) return
+
+        const tx = db.transaction(() => {
+            db.prepare('DELETE FROM post_process_steps').run()
+            db.prepare('DELETE FROM post_process_runs').run()
+        })
+        tx()
+    }
 }

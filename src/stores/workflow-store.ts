@@ -168,6 +168,8 @@ interface WorkflowState {
   addLog: (level: 'info' | 'warn' | 'error', message: string) => void
   /** 清空日志 */
   clearLogs: () => void
+  /** 清空历史任务 */
+  clearHistory: () => void
 }
 
 /** 工作流上下文实例 Map（runId → context） */
@@ -488,6 +490,7 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
         })
         updateRunById(set, run.id, { status: 'failed' })
         get().addLog('error', `❌ [${definition.title}] 步骤失败: ${stepDef.name} — ${errorMsg}`)
+        
         break
       }
     }
@@ -601,32 +604,13 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
   },
 
   removeFromHistory: (runId) => {
-    // 如果工作流还在运行，先取消它
-    const ctx = activeContexts.get(runId)
-    if (ctx) {
-      ctx.cancelled = true
-    }
-    // 如果在步进等待，解除 Promise
-    const resolve = continueResolveRefs.get(runId)
-    if (resolve) {
-      resolve()
-      continueResolveRefs.delete(runId)
-    }
     set((s) => {
+      // 只从历史记录中删除，不影响活跃任务
       const newHistory = s.history.filter(r => r.id !== runId)
-      // 如果在活跃列表中也要移除
-      const newRuns = s.activeRuns.filter(r => r.id !== runId)
-      const newWaiting = { ...s.waitingRuns }
-      delete newWaiting[runId]
       saveHistory(newHistory)
-      return { 
-        history: newHistory,
-        activeRuns: newRuns,
-        waitingRuns: newWaiting,
-        ...computeCompat(newRuns, newWaiting),
-      }
+      return { history: newHistory }
     })
-    get().addLog('warn', '⏹ 已取消工作流')
+    get().addLog('info', '🗑️ 已删除历史任务')
   },
 
   addLog: (level, message) => {
@@ -637,7 +621,29 @@ export const useWorkflowStore = create<WorkflowState>()((set, get) => ({
     },
 
     clearLogs: () => set({ globalLogs: [] }),
-  }))
+
+  clearHistory: () => {
+    // 取消所有活跃的工作流
+    activeContexts.forEach((ctx) => {
+      ctx.cancelled = true
+    })
+    activeContexts.clear()
+    // 解除所有等待的 Promise
+    continueResolveRefs.forEach((resolve) => resolve())
+    continueResolveRefs.clear()
+    // 清空历史记录并保存
+    saveHistory([])
+    set({
+      history: [],
+      activeRuns: [],
+      waitingRuns: {},
+      currentRun: null,
+      waitingForConfirm: false,
+      waitingAfterStepIndex: -1,
+    })
+    get().addLog('info', '🗑️ 已清空历史任务')
+  },
+}))
 
 // ===== 工具函数（按 runId 操作） =====
 

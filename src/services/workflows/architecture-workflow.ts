@@ -274,28 +274,252 @@ export function createCharacterExtractSteps(_projectPath: string, characterDynam
         console.log('[DEBUG] AI 原始返回:', fullContent.substring(0, 500))
         const cleanedCards = stripThinkingTags(fullContent)
         console.log('[DEBUG] 清洗后:', cleanedCards.substring(0, 500))
-        const jsonStr = cleanedCards.replace(/```json?\n?/g, '').replace(/```/g, '').trim()
-        console.log('[DEBUG] JSON 字符串:', jsonStr)
+        
+        // 将 AI 返回内容写入临时文件以便调试
+        try {
+          const fs = await import('fs')
+          const path = await import('path')
+          const logPath = path.join(process.env.APP_ROOT || '.', 'debug_ai_response.txt')
+          fs.writeFileSync(logPath, fullContent, 'utf-8')
+          console.log('[DEBUG] AI 返回内容已写入:', logPath)
+        } catch (e) {
+          console.log('[DEBUG] 写入日志文件失败:', e)
+        }
+
+        // 移除基本干扰字符
+        let jsonStr = cleanedCards
+          .replace(/```json?\n?/g, '')
+          .replace(/```/g, '')
+          .replace(/<[^>]+>/g, '')
+          .replace(/[\x00-\x1F\x7F]/g, ' ')
+          .replace(/\r/g, '')
+          .replace(/\n\s*/g, ' ')
+          .trim()
+        
+        // 移除 BOM 字符（UTF-8 BOM: 0xEF, 0xBB, 0xBF）
+        if (jsonStr.charCodeAt(0) === 0xEF && jsonStr.charCodeAt(1) === 0xBB && jsonStr.charCodeAt(2) === 0xBF) {
+          jsonStr = jsonStr.substring(3)
+          console.log('[DEBUG] 已移除 BOM 字符')
+        }
+        
+        // 调试：显示处理后的字符串开头
+        console.log('[DEBUG] 预处理后的 JSON:', jsonStr.substring(0, 100))
+        
+        // === 核心增强：处理多个 JSON 对象拼接的情况 ===
+        // 寻找所有完整的 JSON 对象/数组
+        const jsonFragments: string[] = []
+        let depth = 0
+        let startIndex = -1
+        
+        for (let i = 0; i < jsonStr.length; i++) {
+          const char = jsonStr[i]
+          
+          if (char === '{' || char === '[') {
+            if (depth === 0) {
+              startIndex = i
+            }
+            depth++
+          } else if (char === '}' || char === ']') {
+            depth--
+            if (depth === 0 && startIndex !== -1) {
+              const fragment = jsonStr.substring(startIndex, i + 1)
+              jsonFragments.push(fragment)
+              startIndex = -1
+            }
+          }
+        }
+        
+        console.log('[DEBUG] 找到', jsonFragments.length, '个 JSON 片段')
+        
+        // 如果找到多个片段，尝试将它们组合成数组
+        let combinedJson = jsonStr
+        if (jsonFragments.length > 1) {
+          console.log('[DEBUG] 检测到多个 JSON 对象，尝试组合成数组')
+          combinedJson = '[' + jsonFragments.join(',') + ']'
+        } else if (jsonFragments.length === 1) {
+          combinedJson = jsonFragments[0]
+        }
+        
+        jsonStr = combinedJson
+        console.log('[DEBUG] 组合后的 JSON:', jsonStr.substring(0, 100))
+        
+        // === 修复常见的 JSON 格式问题 ===
+        
+        // 1. 处理未加引号的属性名（如: name: "xxx" -> "name": "xxx"）
+        // 使用状态机确保只在对象内部、字符串外部添加引号
+        let processedResult = ''
+        let inString = false
+        let escapeNext = false
+        let inObject = false
+        let afterColonOrComma = true
+        
+        for (let i = 0; i < jsonStr.length; i++) {
+          const char = jsonStr[i]
+          
+          if (escapeNext) {
+            processedResult += char
+            escapeNext = false
+            continue
+          }
+          
+          if (char === '\\') {
+            processedResult += char
+            escapeNext = true
+            continue
+          }
+          
+          if (char === '"') {
+            inString = !inString
+            processedResult += char
+            continue
+          }
+          
+          if (inString) {
+            processedResult += char
+            continue
+          }
+          
+          // 在字符串外部
+          if (char === '{') {
+            inObject = true
+            afterColonOrComma = true
+            processedResult += char
+            continue
+          }
+          
+          if (char === '}') {
+            inObject = false
+            afterColonOrComma = false
+            processedResult += char
+            continue
+          }
+          
+          if (char === ':') {
+            afterColonOrComma = false
+            processedResult += char
+            continue
+          }
+          
+          if (char === ',') {
+            afterColonOrComma = true
+            processedResult += char
+            continue
+          }
+          
+          // 跳过空白
+          if (/\s/.test(char)) {
+            processedResult += char
+            continue
+          }
+          
+          // 在对象内部、冒号/逗号之后，可能是属性名
+          if (inObject && afterColonOrComma) {
+            const match = jsonStr.substring(i).match(/^([a-zA-Z_\u4e00-\u9fa5][a-zA-Z0-9_\u4e00-\u9fa5]*)(?=\s*:)/)
+            if (match) {
+              processedResult += '"' + match[1] + '"'
+              i += match[1].length - 1
+              afterColonOrComma = false
+              continue
+            }
+          }
+          
+          processedResult += char
+        }
+        jsonStr = processedResult
+        
+        // 2. 处理多余的逗号
+        jsonStr = jsonStr.replace(/,\s*]/g, ']').replace(/,\s*}/g, '}')
+        
+        // 3. 处理单引号属性名
+        jsonStr = jsonStr.replace(/([{,]\s*)'([^']+)'(\s*:)/g, '$1"$2"$3')
+        
+        // 4. 确保字符串正确闭合
+        let openQuotes = 0
+        for (const char of jsonStr) {
+          if (char === '"') openQuotes++
+        }
+        if (openQuotes % 2 !== 0) {
+          jsonStr += '"'
+        }
+        
+        console.log('[DEBUG] 最终处理后的 JSON:', jsonStr.substring(0, 150))
         
         // 解析 JSON，支持数组或包含数组的对象
         let parsedCards: Array<Record<string, unknown>> = []
-        try {
-          const parsed = JSON.parse(jsonStr)
-          if (Array.isArray(parsed)) {
-            parsedCards = parsed
-          } else if (typeof parsed === 'object' && parsed !== null) {
-            if (Array.isArray(parsed.characters)) {
-              parsedCards = parsed.characters
-            } else if (Array.isArray(parsed.data)) {
-              parsedCards = parsed.data
-            } else {
-              throw new Error('AI 返回的数据格式不支持，期望数组或包含 characters/data 字段的对象')
+        
+        // 定义多个解析策略
+        const parseStrategies = [
+          // 策略1：直接解析
+          () => {
+            const parsed = JSON.parse(jsonStr)
+            if (Array.isArray(parsed)) return parsed
+            if (typeof parsed === 'object' && parsed !== null) {
+              if (Array.isArray(parsed.characters)) return parsed.characters
+              if (Array.isArray(parsed.data)) return parsed.data
             }
-          } else {
-            throw new Error('AI 返回的数据格式无效，期望数组')
+            throw new Error('不是数组格式')
+          },
+          // 策略2：尝试用正则提取所有对象
+          () => {
+            const objects: any[] = []
+            const objRegex = /\{(?:[^{}]|(?:\{(?:[^{}]|(?:\{[^{}]*\}))*\}))*\}/g
+            let match
+            while ((match = objRegex.exec(jsonStr)) !== null) {
+              try {
+                objects.push(JSON.parse(match[0]))
+              } catch {
+                // 跳过无法解析的对象
+              }
+            }
+            if (objects.length > 0) return objects
+            throw new Error('未找到有效对象')
+          },
+          // 策略3：尝试用正则提取所有数组
+          () => {
+            const arrRegex = /\[(?:[^\[\]]|(?:\[(?:[^\[\]]|(?:\[[^\[\]]*\]))*\]))*\]/g
+            let match
+            while ((match = arrRegex.exec(jsonStr)) !== null) {
+              try {
+                const parsed = JSON.parse(match[0])
+                if (Array.isArray(parsed)) return parsed
+              } catch {
+                // 跳过无法解析的数组
+              }
+            }
+            throw new Error('未找到有效数组')
+          },
+        ]
+        
+        // 依次尝试各个策略
+        let lastError: Error | null = null
+        for (let i = 0; i < parseStrategies.length; i++) {
+          try {
+            parsedCards = parseStrategies[i]()
+            console.log(`[DEBUG] 使用策略 ${i + 1} 解析成功，共 ${parsedCards.length} 个角色`)
+            break
+          } catch (e) {
+            lastError = e as Error
+            console.log(`[DEBUG] 策略 ${i + 1} 失败:`, lastError.message)
           }
-        } catch (e) {
-          throw new Error(`解析角色数据失败: ${String(e)}`)
+        }
+        
+        // 如果所有策略都失败
+        if (parsedCards.length === 0) {
+          // 输出更详细的错误信息和问题位置
+          console.error('[DEBUG] 所有解析策略均失败')
+          console.error('[DEBUG] 原始 JSON 字符串:', jsonStr)
+          if (lastError) {
+            const match = lastError.message.match(/position (\d+)/)
+            if (match) {
+              const pos = parseInt(match[1])
+              const start = Math.max(0, pos - 50)
+              const end = Math.min(jsonStr.length, pos + 100)
+              console.error('[DEBUG] 错误位置:', pos)
+              console.error('[DEBUG] 上下文:', jsonStr.substring(start, end))
+            }
+            throw new Error(`解析角色数据失败: ${lastError.message}`)
+          }
+          throw new Error('解析角色数据失败: 无法从AI返回中提取有效数据')
         }
 
         // 构建角色卡数据列表
@@ -313,8 +537,8 @@ export function createCharacterExtractSteps(_projectPath: string, characterDynam
         }
 
         console.log('[DEBUG] 角色卡提取 - 准备写入数据库:', characterDataList.length, '个角色')
-        const result = await ipc.invoke('db:character-save-all', characterDataList as unknown as CharacterData[])
-        console.log('[DEBUG] 角色卡写入结果:', result)
+        const saveResult = await ipc.invoke('db:character-save-all', characterDataList as unknown as CharacterData[])
+        console.log('[DEBUG] 角色卡写入结果:', saveResult)
         cb.log(`✅ 角色卡提取完毕（共 ${characterDataList.length} 个角色）`)
       },
     },

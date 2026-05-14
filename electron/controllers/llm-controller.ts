@@ -2,6 +2,8 @@ import { ipcMain, BrowserWindow } from 'electron'
 import { readJsonFile, writeJsonFile, MODELS_CONFIG_PATH, GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG } from '../utils/config-utils'
 import { ModelProfile, GlobalConfig } from '../../src/shared/ipc-channels'
 import { LLMFactory } from '../llm/llm-factory'
+import { LLMHistoryRepository } from '../repositories/llm-repository'
+import { estimateMessageTokens, estimateTokens } from '../utils/token-utils'
 
 const activeStreams = new Map<string, AbortController>()
 
@@ -40,27 +42,81 @@ function applyProxyConfig() {
 
 export function registerLLMController() {
   ipcMain.handle('llm:generate', async (_event, request: { modelId: string; messages: Array<{ role: string; content: string }>; temperature?: number; maxTokens?: number; responseFormat?: { type: string }; thinking?: boolean }) => {
+    const startTime = Date.now()
     try {
       applyProxyConfig()
       const model = getModelConfig(request.modelId)
-      if (!model) return { success: false, content: '', error: '未找到模型配置' }
+      if (!model) {
+        LLMHistoryRepository.logCall({
+          modelId: request.modelId,
+          modelName: '未知模型',
+          purpose: request.messages[0]?.content?.substring(0, 100) || 'unknown',
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+          durationMs: Date.now() - startTime,
+          success: false,
+          errorMessage: '未找到模型配置'
+        })
+        return { success: false, content: '', error: '未找到模型配置' }
+      }
 
       const provider = LLMFactory.getProvider(model)
-      return await provider.generate(model, request.messages, {
+      const result = await provider.generate(model, request.messages, {
         temperature: request.temperature ?? model.temperature,
         maxTokens: request.maxTokens ?? model.maxTokens,
         responseFormat: request.responseFormat,
         thinking: request.thinking,
       })
+
+      // 记录调用
+      LLMHistoryRepository.logCall({
+        modelId: model.id,
+        modelName: model.name,
+        purpose: request.messages[0]?.content?.substring(0, 100) || 'unknown',
+        promptTokens: result.usage?.promptTokens ?? 0,
+        completionTokens: result.usage?.completionTokens ?? 0,
+        totalTokens: result.usage?.totalTokens ?? 0,
+        durationMs: Date.now() - startTime,
+        success: result.success,
+        errorMessage: result.error
+      })
+
+      return result
     } catch (error) {
+      LLMHistoryRepository.logCall({
+        modelId: request.modelId,
+        modelName: '未知模型',
+        purpose: request.messages[0]?.content?.substring(0, 100) || 'unknown',
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        durationMs: Date.now() - startTime,
+        success: false,
+        errorMessage: String(error)
+      })
       return { success: false, content: '', error: String(error) }
     }
   })
 
   ipcMain.handle('llm:generate-stream', async (event, requestId: string, request: { modelId: string; messages: Array<{ role: string; content: string }>; temperature?: number; maxTokens?: number; responseFormat?: { type: string }; thinking?: boolean }) => {
+    const startTime = Date.now()
     applyProxyConfig()
     const model = getModelConfig(request.modelId)
-    if (!model) return { requestId, started: false }
+    if (!model) {
+      LLMHistoryRepository.logCall({
+        modelId: request.modelId,
+        modelName: '未知模型',
+        purpose: request.messages[0]?.content?.substring(0, 100) || 'unknown',
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        durationMs: Date.now() - startTime,
+        success: false,
+        errorMessage: '未找到模型配置'
+      })
+      return { requestId, started: false }
+    }
 
     const abortController = new AbortController()
     activeStreams.set(requestId, abortController)
@@ -88,6 +144,24 @@ export function registerLLMController() {
             win.webContents.send('llm:stream-done', { requestId, fullText, usage })
           }
         } catch { /* 忽略发送错误 */ }
+        
+        // 如果 API 没有返回 token 使用量，使用估算值
+        const promptTokens = usage?.promptTokens ?? estimateMessageTokens(request.messages)
+        const completionTokens = usage?.completionTokens ?? estimateTokens(fullText)
+        const totalTokens = usage?.totalTokens ?? (promptTokens + completionTokens)
+        
+        // 记录调用
+        LLMHistoryRepository.logCall({
+          modelId: model.id,
+          modelName: model.name,
+          purpose: request.messages[0]?.content?.substring(0, 100) || 'unknown',
+          promptTokens,
+          completionTokens,
+          totalTokens,
+          durationMs: Date.now() - startTime,
+          success: true
+        })
+        
         activeStreams.delete(requestId)
       },
       onError: (error: string) => {
@@ -96,6 +170,20 @@ export function registerLLMController() {
             win.webContents.send('llm:stream-error', { requestId, error })
           }
         } catch { /* 忽略发送错误 */ }
+        
+        // 记录调用
+        LLMHistoryRepository.logCall({
+          modelId: model.id,
+          modelName: model.name,
+          purpose: request.messages[0]?.content?.substring(0, 100) || 'unknown',
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+          durationMs: Date.now() - startTime,
+          success: false,
+          errorMessage: error
+        })
+        
         activeStreams.delete(requestId)
       },
     })
