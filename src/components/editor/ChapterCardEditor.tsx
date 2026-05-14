@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Save, BookOpen, RefreshCw, Plus, Trash2,
-  Sparkles, PenLine, Bot, Layers
+  Sparkles, PenLine, Bot, Layers, Eye
 } from 'lucide-react'
 import { useProjectStore } from '../../stores/project-store'
 import { useWorkflowStore } from '../../stores/workflow-store'
@@ -18,6 +18,7 @@ import {
 import { guardDirectoryGeneration } from '../../services/workflow-guards'
 import DirectoryConfigDialog from '../dialogs/DirectoryConfigDialog'
 import BatchWriteConfigDialog from '../dialogs/BatchWriteConfigDialog'
+import BatchPreviewConfigDialog from '../dialogs/BatchPreviewConfigDialog'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Textarea } from '../ui/Textarea'
@@ -57,6 +58,9 @@ export default function ChapterCardEditor() {
   
   // 批量写作配置弹窗
   const [showBatchWriteDialog, setShowBatchWriteDialog] = useState(false)
+  
+  // 批量预览配置弹窗
+  const [showBatchPreviewDialog, setShowBatchPreviewDialog] = useState(false)
 
   // 使用 ref 保存当前选中的章节号，避免依赖循环
   const selectedChapterRef = useRef<number | null>(null)
@@ -404,12 +408,94 @@ export default function ChapterCardEditor() {
     addLog('info', `🎉 批量自动编写完成！共完成${completedCount}/${totalChaptersToWrite}章`)
     toast.success(`批量编写完成！\n共完成 ${completedCount}/${totalChaptersToWrite} 章`)
   }
+
+  /**
+   * 批量预览指定范围的章节 — 生成临时预览草稿，不保存到数据库
+   */
+  const handleBatchPreview = async (startChapter?: number, endChapter?: number, authorGuidance?: string) => {
+    if (!currentProject) return
+
+    // 前置校验：故事架构是否就绪
+    const guard = await guardDirectoryGeneration()
+    if (!guard.ok) {
+      addLog('error', `⚠️ 前置条件未满足：${guard.message}`)
+      toast.warning(`无法预览\n\n${guard.message}`)
+      return
+    }
+    if (guard.message) {
+      const yes = await confirm(`${guard.message}\n\n是否仍要继续批量预览？`, {
+        title: '前置条件警告',
+        confirmText: '继续预览',
+      })
+      if (!yes) return
+    }
+
+    const { createPreviewDraftWorkflow } = await import('../../services/workflows/chapter-workflow')
+    
+    // 确定预览范围
+    const start = startChapter ?? (nextWriteChapter ?? 1)
+    const end = endChapter ?? (currentProject?.novelConfig.totalChapters ?? 100)
+    
+    // 过滤出指定范围内的章节，并按章节号排序
+    const pendingBlueprints = blueprints
+      .filter(bp => bp.chapterNumber >= start && bp.chapterNumber <= end)
+      .sort((a, b) => a.chapterNumber - b.chapterNumber)
+    
+    const totalChaptersToPreview = pendingBlueprints.length
+    let completedCount = 0
+    
+    addLog('info', `🔍 开始批量预览，共${totalChaptersToPreview}章（第${start}-${end}章）`)
+
+    // 遍历章节，依次生成预览草稿
+    for (const bp of pendingBlueprints) {
+      try {
+        addLog('info', `📝 正在预览第${bp.chapterNumber}章 · ${bp.title || '未命名'}`)
+        
+        // 组合作者微操指导：章节自身的指导优先，其次使用批量设置的指导
+        const combinedGuidance = bp.userGuidance || authorGuidance
+        
+        const chapterInfo = {
+          chapterNumber: bp.chapterNumber,
+          title: bp.title,
+          role: bp.role,
+          purpose: bp.purpose,
+          characters: bp.characters,
+          keyEvents: bp.keyEvents,
+          suspenseHook: bp.suspenseHook,
+          userGuidance: combinedGuidance,
+        }
+
+        // 创建并启动预览工作流
+        startWorkflow(createPreviewDraftWorkflow(chapterInfo))
+        
+        completedCount++
+        addLog('info', `✅ 第${bp.chapterNumber}章预览完成 (${completedCount}/${totalChaptersToPreview})`)
+        
+        // 预览之间添加短暂延迟
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+      } catch (error) {
+        addLog('error', `❌ 第${bp.chapterNumber}章预览失败: ${error}`)
+        // 继续下一章
+      }
+    }
+
+    addLog('info', `🎉 批量预览完成！共生成${completedCount}/${totalChaptersToPreview}章预览`)
+    toast.success(`批量预览完成！\n共生成 ${completedCount}/${totalChaptersToPreview} 章预览`)
+  }
   
   /**
    * 批量写作配置确认回调
    */
   const handleBatchWriteConfirm = (startChapter: number, endChapter: number, authorGuidance: string) => {
     handleBatchAutoWrite(startChapter, endChapter, authorGuidance)
+  }
+
+  /**
+   * 批量预览配置确认回调
+   */
+  const handleBatchPreviewConfirm = (startChapter: number, endChapter: number, authorGuidance: string) => {
+    handleBatchPreview(startChapter, endChapter, authorGuidance)
   }
 
   if (loading) {
@@ -452,6 +538,15 @@ export default function ChapterCardEditor() {
           {/* 写作入口 — 仅下一章可写时显示 */}
           {nextWriteChapter !== null && (
             <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowBatchPreviewDialog(true)}
+                title="批量生成预览草稿：不保存，仅供预览用途"
+              >
+                <Eye size={12} />
+                批量预览
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -525,6 +620,15 @@ export default function ChapterCardEditor() {
         nextWriteChapter={nextWriteChapter}
         totalChapters={currentProject?.novelConfig.totalChapters ?? 100}
         onConfirm={handleBatchWriteConfirm}
+      />
+
+      {/* 批量预览配置弹窗 */}
+      <BatchPreviewConfigDialog
+        isOpen={showBatchPreviewDialog}
+        onClose={() => setShowBatchPreviewDialog(false)}
+        nextWriteChapter={nextWriteChapter}
+        totalChapters={currentProject?.novelConfig.totalChapters ?? 100}
+        onConfirm={handleBatchPreviewConfirm}
       />
 
       {/* 主区域：左侧列表 + 右侧编辑 */}
