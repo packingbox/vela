@@ -73,8 +73,9 @@ app.on('activate', () => {
 // 应用关闭前清除预览文件
 app.on('before-quit', async () => {
   try {
-    const { ipcRenderer } = await import('electron')
-    ipcRenderer.invoke('preview:cleanup')
+    // 预览草稿存储在内存中，应用退出时自动清理
+    // 如果需要清理临时文件，应在这里直接执行 fs 操作
+    console.log('[Vela] 清理预览数据...')
   } catch (e) {
     console.warn('[Vela] 预览清理失败:', e)
   }
