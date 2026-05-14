@@ -4,7 +4,7 @@ import { create } from 'zustand'
 export interface EditorTab {
   id: string
   name: string
-  type: 'chapter' | 'outline' | 'character' | 'config' | 'diff' | 'chapter-card' | 'world-building' | 'arch-file' | 'version-history' | 'review-report'
+  type: 'chapter' | 'outline' | 'character' | 'config' | 'diff' | 'chapter-card' | 'world-building' | 'arch-file' | 'version-history' | 'review-report' | 'preview'
   filePath?: string
   content?: string
   /** diff 视图的原始内容 */
@@ -131,5 +131,18 @@ export const useEditorStore = create<EditorState>()((set, get) => ({
 
   clearTabs: () => {
     set({ tabs: [], activeTabId: null })
+  },
+
+  closeAllPreviewTabs: () => {
+    const { tabs, activeTabId } = get()
+    const previewTabs = tabs.filter((t) => t.type === 'preview')
+    if (previewTabs.length === 0) return
+    const newTabs = tabs.filter((t) => t.type !== 'preview')
+    set({
+      tabs: newTabs,
+      activeTabId: previewTabs.some((t) => t.id === activeTabId)
+        ? (newTabs.length > 0 ? newTabs[newTabs.length - 1].id : null)
+        : activeTabId,
+    })
   },
 }))

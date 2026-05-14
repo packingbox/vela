@@ -137,9 +137,6 @@ export default function StatusBar() {
                       color: defaultModelId === model.id 
                         ? 'var(--color-accent)' 
                         : 'var(--color-text)',
-                      hover: {
-                        backgroundColor: 'var(--color-hover)',
-                      },
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.backgroundColor = 'var(--color-hover)'

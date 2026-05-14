@@ -71,6 +71,7 @@ export type WorkflowType =
   | 'config_generation'       // 智能配置生成
   | 'post_process'            // 后处理任务（角色卡提取等）
   | 'novel_import'            // 导入已有小说（逆向推演全流程）
+  | 'preview_draft'           // 预览草稿（临时生成，不保存数据库）
 
 /** 工作流步骤执行器 */
 export type StepExecutor = (

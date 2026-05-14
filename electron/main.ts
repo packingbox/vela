@@ -70,6 +70,16 @@ app.on('activate', () => {
   }
 })
 
+// 应用关闭前清除预览文件
+app.on('before-quit', async () => {
+  try {
+    const { ipcRenderer } = await import('electron')
+    ipcRenderer.invoke('preview:cleanup')
+  } catch (e) {
+    console.warn('[Vela] 预览清理失败:', e)
+  }
+})
+
 app.whenReady().then(() => {
   registerIPCHandlers()
   registerMCPHandlers()

@@ -436,3 +436,29 @@ export function createRepairFinalizeWorkflow(chapterNumber: number): WorkflowDef
     onComplete: { mode: 'open', message: `✅ 第${chapterNumber}章后处理修复完成` },
   }
 }
+
+/**
+ * 预览草稿工作流 — 生成临时预览草稿，不保存到数据库
+ * 用于快速判断和参考，关闭应用后自动清除
+ */
+export function createPreviewDraftWorkflow(chapterInfo: ChapterInfo): WorkflowDefinition {
+  return {
+    type: 'preview_draft',
+    title: `🔍 预览 — 第 ${chapterInfo.chapterNumber} 章 · ${chapterInfo.title}`,
+    steps: [
+      {
+        name: '生成预览',
+        description: '基于架构 + 蓝图 + 上下文生成预览草稿（临时文件，不入库）',
+        executor: async (step, context, callbacks) => {
+          const { PreviewDraftCommand } = await import('./commands/preview-draft.command')
+          const cmd = new PreviewDraftCommand(chapterInfo)
+          return cmd.execute({ step, context, callbacks })
+        },
+      },
+    ],
+    onComplete: {
+      mode: 'silent',
+      message: '',
+    },
+  }
+}

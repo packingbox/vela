@@ -22,12 +22,23 @@ export class OpenAIProvider implements ILLMProvider {
       stream: false,
     }
 
+    // DeepSeek 的思考模式默认是 enabled，需要主动发送 disabled 才会关闭
     // 思考模式下 temperature/top_p 等参数不生效（DeepSeek 会静默忽略），仅在非思考模式下传递
-    if (opts.thinking) {
-      // thinking 参数直接放在请求体顶层（非 extra_body，那是 OpenAI SDK 层概念）
-      body.thinking = { type: 'enabled' }
+    if (model.provider === 'deepseek') {
+      if (opts.thinking) {
+        body.thinking = { type: 'enabled' }
+      } else {
+        // 主动关闭思考模式
+        body.thinking = { type: 'disabled' }
+        body.temperature = opts.temperature ?? model.temperature
+      }
     } else {
-      body.temperature = opts.temperature ?? model.temperature
+      // 其他提供商（OpenAI、Ollama 等）保持原有逻辑
+      if (opts.thinking) {
+        body.thinking = { type: 'enabled' }
+      } else {
+        body.temperature = opts.temperature ?? model.temperature
+      }
     }
 
     if (opts.responseFormat) body.response_format = opts.responseFormat
@@ -76,11 +87,23 @@ export class OpenAIProvider implements ILLMProvider {
         stream: true,
       }
 
+      // DeepSeek 的思考模式默认是 enabled，需要主动发送 disabled 才会关闭
       // 思考模式下 temperature/top_p 等参数不生效（DeepSeek 会静默忽略），仅在非思考模式下传递
-      if (opts.thinking) {
-        body.thinking = { type: 'enabled' }
+      if (model.provider === 'deepseek') {
+        if (opts.thinking) {
+          body.thinking = { type: 'enabled' }
+        } else {
+          // 主动关闭思考模式
+          body.thinking = { type: 'disabled' }
+          body.temperature = opts.temperature ?? model.temperature
+        }
       } else {
-        body.temperature = opts.temperature ?? model.temperature
+        // 其他提供商（OpenAI、Ollama 等）保持原有逻辑
+        if (opts.thinking) {
+          body.thinking = { type: 'enabled' }
+        } else {
+          body.temperature = opts.temperature ?? model.temperature
+        }
       }
 
       if (opts.responseFormat) body.response_format = opts.responseFormat

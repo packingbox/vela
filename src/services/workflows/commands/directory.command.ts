@@ -68,7 +68,6 @@ export class GenerateDirectoryCommand extends BaseWorkflowCommand<ChapterBluepri
     let cursor = startChapter
     // 补全模式下需要跟踪缺失章节
     const missingChapters = (context.data.missingChapters as number[]) || []
-    const existingNumbers = new Set(existingBlueprints.map(b => b.chapterNumber))
 
     while (cursor <= endChapter) {
       if (context.cancelled) { callbacks.log('已取消'); break }
@@ -172,7 +171,7 @@ export class GenerateDirectoryCommand extends BaseWorkflowCommand<ChapterBluepri
         useProjectStore.getState().refreshFileTree()
         // 每批次保存后发出事件通知蓝图编辑器刷新界面
         const { globalEventBus } = await import('../../../shared/event-bus')
-        globalEventBus.emit('WORKFLOW_COMPLETE', {})
+        globalEventBus.emit('WORKFLOW_COMPLETE', { type: 'directory' })
 
         const actualMaxChapter = parseResult.blueprints.length > 0
           ? Math.max(...parseResult.blueprints.map(p => p.chapterNumber))
@@ -194,39 +193,7 @@ export class GenerateDirectoryCommand extends BaseWorkflowCommand<ChapterBluepri
           }
           
           if (missingChapters.length > 0) {
-            callbacks.log(`    ⚠️ 缺失章节: ${missingChapters.join(', ')}`)
-            callbacks.log(`    🔄 尝试为缺失章节单独生成蓝图...`)
-            
-            // 对每个缺失的章节单独请求生成
-            for (const missingNum of missingChapters) {
-              callbacks.log(`      生成第 ${missingNum} 章...`)
-              await new Promise(resolve => setTimeout(resolve, 500)) // 避免请求过于频繁
-              
-              const prompt = await buildPrompt(
-                project, 
-                [{ chapterNumber: missingNum }], 
-                existingBlueprints,
-                modelMaxTokens,
-                outputBudget
-              )
-              
-              const llmResult = await this.callLLM(prompt, SYSTEM_PROMPT, callbacks, {
-                responseFormat: { type: 'json_object' }
-              }, context)
-              
-              callbacks.log(`      LLM 返回长度: ${llmResult.length} 字符`)
-              
-              const singleResult = parseBlueprints(llmResult, missingNum, missingNum)
-              if (singleResult.success && singleResult.blueprints.length > 0) {
-                const bp = singleResult.blueprints[0]
-                await saveAllBlueprints([bp])
-                callbacks.log(`      ✅ 已补全第 ${bp.chapterNumber} 章：${bp.title}`)
-                newBlueprints.push(bp)
-                existingChapters.add(bp.chapterNumber)
-              } else {
-                callbacks.log(`      ❌ 第 ${missingNum} 章补全失败`)
-              }
-            }
+            callbacks.log(`    ⚠️ 缺失章节: ${missingChapters.join(', ')} - 请使用「补全模式」重新生成`)
           }
         }
         

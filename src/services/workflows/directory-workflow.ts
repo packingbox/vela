@@ -95,7 +95,6 @@ function repairJSON(jsonStr: string): RepairResult {
     'su': 'suspenseHook',
     'r': 'role',
     'pr': 'purpose',
-    'ch': 'characters',
     'char': 'characters',
     'print': 'blueprints',
     'prints': 'blueprints',
@@ -164,7 +163,7 @@ function repairJSON(jsonStr: string): RepairResult {
   }
 }
 
-function truncateAndExtract(content: string, startNum: number, endNum: number): { array: unknown[] | null, problemArea: string } {
+function truncateAndExtract(content: string): { array: unknown[] | null, problemArea: string } {
   const firstBracket = content.indexOf('[')
   const lastBracket = content.lastIndexOf(']')
 
@@ -369,7 +368,7 @@ export function parseAndValidateBlueprints(content: string, startNum: number, en
   // 策略2: 提取数组格式 [...]
   if (!parsed) {
     try {
-      const { array, problemArea } = truncateAndExtract(jsonStr, startNum, endNum)
+      const { array, problemArea } = truncateAndExtract(jsonStr)
       if (array) {
         parsed = array
         parseStrategy = 'extract_array'
@@ -420,7 +419,7 @@ export function parseAndValidateBlueprints(content: string, startNum: number, en
       const blueprintsMatch = jsonStr.match(/"blueprints"\s*:\s*\[([\s\S]*)\]/)
       if (blueprintsMatch) {
         const arrayContent = '[' + blueprintsMatch[1] + ']'
-        const { array } = truncateAndExtract(arrayContent, startNum, endNum)
+        const { array } = truncateAndExtract(arrayContent)
         if (array) {
           parsed = array
           parseStrategy = 'extract_blueprints_key'
@@ -721,7 +720,7 @@ export function createDirectoryWorkflow(params: DirectoryWorkflowParams = { mode
           useProjectStore.getState().refreshFileTree()
           // 发出事件通知蓝图编辑器刷新
           const { globalEventBus } = await import('../../shared/event-bus')
-          globalEventBus.emit('WORKFLOW_COMPLETE', {})
+          globalEventBus.emit('WORKFLOW_COMPLETE', { type: 'directory' })
           return '已保存蓝图'
         },
       },

@@ -17,6 +17,7 @@ import {
 } from '../../services/workflows/directory-workflow'
 import { guardDirectoryGeneration } from '../../services/workflow-guards'
 import DirectoryConfigDialog from '../dialogs/DirectoryConfigDialog'
+import BatchWriteConfigDialog from '../dialogs/BatchWriteConfigDialog'
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Textarea } from '../ui/Textarea'
@@ -53,6 +54,9 @@ export default function ChapterCardEditor() {
 
   // 蓝图生成弹窗（替代原 inline 批量面板）
   const [showBlueprintDialog, setShowBlueprintDialog] = useState(false)
+  
+  // 批量写作配置弹窗
+  const [showBatchWriteDialog, setShowBatchWriteDialog] = useState(false)
 
   // 使用 ref 保存当前选中的章节号，避免依赖循环
   const selectedChapterRef = useRef<number | null>(null)
@@ -226,6 +230,44 @@ export default function ChapterCardEditor() {
   }
 
   /**
+   * 预览草稿 — 生成临时预览草稿，不保存到数据库
+   * 用于快速判断和参考，关闭应用后自动清除
+   */
+  const handlePreviewDraft = async (bp: ChapterBlueprint) => {
+    if (!currentProject) return
+
+    const guard = await guardDirectoryGeneration()
+    if (!guard.ok) {
+      addLog('error', `⚠️ 前置条件未满足：${guard.message}`)
+      toast.warning(`无法预览\n\n${guard.message}`)
+      return
+    }
+    if (guard.message) {
+      const yes = await confirm(`${guard.message}\n\n是否仍要继续预览？`, {
+        title: '前置条件警告',
+        confirmText: '继续预览',
+      })
+      if (!yes) return
+    }
+
+    const { createPreviewDraftWorkflow } = await import('../../services/workflows/chapter-workflow')
+
+    const chapterInfo = {
+      chapterNumber: bp.chapterNumber,
+      title: bp.title,
+      role: bp.role,
+      purpose: bp.purpose,
+      characters: bp.characters,
+      keyEvents: bp.keyEvents,
+      suspenseHook: bp.suspenseHook,
+      userGuidance: bp.userGuidance,
+    }
+
+    startWorkflow(createPreviewDraftWorkflow(chapterInfo))
+    addLog('info', `🔍 已启动第${bp.chapterNumber}章预览`)
+  }
+
+  /**
    * 自动编写此章 — 一键完成写稿→审稿→修稿→定稿全流程
    */
   const handleAutoWriteChapter = async (bp: ChapterBlueprint) => {
@@ -264,9 +306,9 @@ export default function ChapterCardEditor() {
   }
 
   /**
-   * 批量自动编写所有章节 — 对每章依次执行写稿→审稿→修稿→定稿
+   * 批量自动编写指定范围的章节 — 对每章依次执行写稿→审稿→修稿→定稿
    */
-  const handleBatchAutoWrite = async () => {
+  const handleBatchAutoWrite = async (startChapter?: number, endChapter?: number) => {
     if (!currentProject) return
 
     // 前置校验：故事架构是否就绪
@@ -286,17 +328,21 @@ export default function ChapterCardEditor() {
 
     const { createAutoWriteWorkflow } = await import('../../services/workflows/chapter-workflow')
     
-    // 过滤出未完成的章节（章节号 >= nextWriteChapter），并按章节号排序
+    // 确定编写范围
+    const start = startChapter ?? (nextWriteChapter ?? 1)
+    const end = endChapter ?? (currentProject?.novelConfig.totalChapters ?? 100)
+    
+    // 过滤出指定范围内的章节，并按章节号排序
     const pendingBlueprints = blueprints
-      .filter(bp => bp.chapterNumber >= (nextWriteChapter ?? 1))
+      .filter(bp => bp.chapterNumber >= start && bp.chapterNumber <= end)
       .sort((a, b) => a.chapterNumber - b.chapterNumber)
     
-    const totalChapters = pendingBlueprints.length
+    const totalChaptersToWrite = pendingBlueprints.length
     let completedCount = 0
     
-    addLog('info', `🚀 开始批量自动编写，共${totalChapters}章（从第${nextWriteChapter ?? 1}章开始）`)
+    addLog('info', `🚀 开始批量自动编写，共${totalChaptersToWrite}章（第${start}-${end}章）`)
 
-    // 遍历未完成的章节，依次执行自动编写
+    // 遍历章节，依次执行自动编写
     for (const bp of pendingBlueprints) {
       try {
         addLog('info', `📝 正在编写第${bp.chapterNumber}章 · ${bp.title || '未命名'}`)
@@ -332,7 +378,7 @@ export default function ChapterCardEditor() {
         await completionPromise
 
         completedCount++
-        addLog('info', `✅ 第${bp.chapterNumber}章编写完成 (${completedCount}/${totalChapters})`)
+        addLog('info', `✅ 第${bp.chapterNumber}章编写完成 (${completedCount}/${totalChaptersToWrite})`)
         
         // 关闭当前章节的所有tab（初稿/审查/合并/定稿等）
         const { useEditorStore } = await import('../../stores/editor-store')
@@ -352,8 +398,15 @@ export default function ChapterCardEditor() {
       }
     }
 
-    addLog('info', `🎉 批量自动编写完成！共完成${completedCount}/${totalChapters}章`)
-    toast.success(`批量编写完成！\n共完成 ${completedCount}/${totalChapters} 章`)
+    addLog('info', `🎉 批量自动编写完成！共完成${completedCount}/${totalChaptersToWrite}章`)
+    toast.success(`批量编写完成！\n共完成 ${completedCount}/${totalChaptersToWrite} 章`)
+  }
+  
+  /**
+   * 批量写作配置确认回调
+   */
+  const handleBatchWriteConfirm = (startChapter: number, endChapter: number) => {
+    handleBatchAutoWrite(startChapter, endChapter)
   }
 
   if (loading) {
@@ -399,8 +452,8 @@ export default function ChapterCardEditor() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleBatchAutoWrite}
-                title="批量自动编写所有章节：对每章依次执行写稿→审稿→修稿→定稿"
+                onClick={() => setShowBatchWriteDialog(true)}
+                title="批量自动编写章节：对每章依次执行写稿→审稿→修稿→定稿"
               >
                 <Layers size={12} />
                 批量写作
@@ -460,6 +513,15 @@ export default function ChapterCardEditor() {
         onClose={() => setShowBlueprintDialog(false)}
         existingCount={blueprints.length}
         onConfirm={handleBatchGenerate}
+      />
+
+      {/* 批量写作配置弹窗 */}
+      <BatchWriteConfigDialog
+        isOpen={showBatchWriteDialog}
+        onClose={() => setShowBatchWriteDialog(false)}
+        nextWriteChapter={nextWriteChapter}
+        totalChapters={currentProject?.novelConfig.totalChapters ?? 100}
+        onConfirm={handleBatchWriteConfirm}
       />
 
       {/* 主区域：左侧列表 + 右侧编辑 */}
@@ -535,6 +597,16 @@ export default function ChapterCardEditor() {
                   第 {selected.chapterNumber} 章：{selected.title || '未命名'}
                 </h3>
                 <div className="flex items-center gap-1.5">
+                  {/* 预览草稿按钮 — 所有章节都可以预览 */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handlePreviewDraft(selected)}
+                    title="生成临时预览草稿（不保存，关闭应用后自动清除）"
+                    style={{ color: 'var(--color-text-secondary)' }}
+                  >
+                    <Bot size={12} /> 预览
+                  </Button>
                   {/* 仅下一章允许写作 */}
                   {nextWriteChapter !== null && selected.chapterNumber === nextWriteChapter && (
                     <Button

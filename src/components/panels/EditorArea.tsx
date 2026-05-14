@@ -1,4 +1,4 @@
-import { X, FileText, Settings, Users, ArrowLeftRight, MoreHorizontal, BookOpen, History, ClipboardCheck, Globe, Save, ChevronLeft, ChevronRight, PenTool } from 'lucide-react'
+import { X, FileText, Settings, Users, ArrowLeftRight, MoreHorizontal, BookOpen, History, ClipboardCheck, Globe, Save, ChevronLeft, ChevronRight, PenTool, Eye } from 'lucide-react'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { ContextMenu, type ContextMenuEntry } from '../ui/ContextMenu'
 import {
@@ -466,6 +466,7 @@ export default function EditorArea({ onNewProject }: EditorAreaProps) {
     if (type === 'world-building') return <Globe size={14} />
     if (type === 'version-history') return <History size={14} />
     if (type === 'review-report') return <ClipboardCheck size={14} />
+    if (type === 'preview') return <Eye size={14} />
     return <FileText size={14} />
   }
 
@@ -657,6 +658,36 @@ export default function EditorArea({ onNewProject }: EditorAreaProps) {
             chapterNumber={activeTab.chapterNumber}
             chapterDir={activeTab.chapterDir}
           />
+        )}
+        {/* 预览草稿 — 使用草稿箱相同格式 */}
+        {activeTab?.type === 'preview' && (
+          <div className="h-full overflow-y-auto p-6">
+            <div className="max-w-3xl mx-auto">
+              <div className="flex items-center gap-2 mb-4 pb-4 border-b" style={{ borderColor: 'var(--color-border)' }}>
+                <Eye size={16} style={{ color: 'var(--color-accent)' }} />
+                <span className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>预览草稿</span>
+                <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--color-accent)', color: 'white' }}>
+                  临时
+                </span>
+                {activeTab.content && (
+                  <span className="text-xs ml-auto" style={{ color: 'var(--color-text-muted)' }}>
+                    {activeTab.content.length.toLocaleString()} 字
+                  </span>
+                )}
+              </div>
+              <div
+                className="prose prose-invert max-w-none"
+                style={{ 
+                  color: 'var(--color-text)',
+                  whiteSpace: 'pre-wrap',
+                  fontFamily: 'var(--font-mono)',
+                  lineHeight: '1.75',
+                }}
+              >
+                {activeTab.content || '加载中...'}
+              </div>
+            </div>
+          </div>
         )}
         {/* diff 合并视图 — 统一使用弹出式 Dialog（与 DraftEditor 一致） */}
         <Dialog
