@@ -308,7 +308,7 @@ export default function ChapterCardEditor() {
   /**
    * 批量自动编写指定范围的章节 — 对每章依次执行写稿→审稿→修稿→定稿
    */
-  const handleBatchAutoWrite = async (startChapter?: number, endChapter?: number) => {
+  const handleBatchAutoWrite = async (startChapter?: number, endChapter?: number, authorGuidance?: string) => {
     if (!currentProject) return
 
     // 前置校验：故事架构是否就绪
@@ -347,6 +347,9 @@ export default function ChapterCardEditor() {
       try {
         addLog('info', `📝 正在编写第${bp.chapterNumber}章 · ${bp.title || '未命名'}`)
         
+        // 组合作者微操指导：章节自身的指导优先，其次使用批量设置的指导
+        const combinedGuidance = bp.userGuidance || authorGuidance
+        
         const chapterInfo = {
           chapterNumber: bp.chapterNumber,
           title: bp.title,
@@ -355,7 +358,7 @@ export default function ChapterCardEditor() {
           characters: bp.characters,
           keyEvents: bp.keyEvents,
           suspenseHook: bp.suspenseHook,
-          userGuidance: bp.userGuidance,
+          userGuidance: combinedGuidance,
         }
 
         // 创建工作流
@@ -405,8 +408,8 @@ export default function ChapterCardEditor() {
   /**
    * 批量写作配置确认回调
    */
-  const handleBatchWriteConfirm = (startChapter: number, endChapter: number) => {
-    handleBatchAutoWrite(startChapter, endChapter)
+  const handleBatchWriteConfirm = (startChapter: number, endChapter: number, authorGuidance: string) => {
+    handleBatchAutoWrite(startChapter, endChapter, authorGuidance)
   }
 
   if (loading) {

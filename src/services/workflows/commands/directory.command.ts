@@ -59,10 +59,16 @@ export class GenerateDirectoryCommand extends BaseWorkflowCommand<ChapterBluepri
     const modelMaxTokens = defaultModel?.maxTokens || 4096
     const outputBudget = Math.floor(modelMaxTokens * 0.6)
     const tokensPerChapter = 250
-    // 减小批量大小，避免 LLM 输出过长被截断
-    const batchSize = Math.min(10, Math.max(3, Math.floor(outputBudget / tokensPerChapter)))
+    
+    // 根据供应商类型决定请求策略
+    // DeepSeek 有输出限制和 keep-alive 机制问题，需要分段请求
+    // 本地 LLM（如 Ollama）没有这些限制，可以一次性请求全部章节
+    const isDeepSeek = defaultModel?.provider === 'deepseek'
+    const batchSize = isDeepSeek 
+      ? Math.min(10, Math.max(3, Math.floor(outputBudget / tokensPerChapter)))
+      : endChapter - startChapter + 1  // 非 DeepSeek：一次性请求全部
 
-    callbacks.log(`配置信息: modelMaxTokens=${modelMaxTokens}, outputBudget=${outputBudget}, tokensPerChapter=${tokensPerChapter}, batchSize=${batchSize}`)
+    callbacks.log(`配置信息: model=${defaultModel?.name || '未知'}, provider=${defaultModel?.provider || '未知'}, modelMaxTokens=${modelMaxTokens}, outputBudget=${outputBudget}, batchSize=${batchSize}, strategy=${isDeepSeek ? '分段请求' : '一次性请求'}`)
 
     const newBlueprints: ChapterBlueprint[] = []
     let cursor = startChapter
@@ -199,8 +205,8 @@ export class GenerateDirectoryCommand extends BaseWorkflowCommand<ChapterBluepri
         
         cursor = actualMaxChapter + 1
         
-        // 在批次之间添加延迟，避免请求过于频繁
-        if (cursor <= endChapter) {
+        // 在批次之间添加延迟，避免请求过于频繁（仅 DeepSeek 需要）
+        if (isDeepSeek && cursor <= endChapter) {
           callbacks.log(`    ⏳ 等待 1 秒后继续...`)
           await new Promise(resolve => setTimeout(resolve, 1000))
         }

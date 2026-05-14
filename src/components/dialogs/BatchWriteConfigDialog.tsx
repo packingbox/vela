@@ -7,13 +7,14 @@ import {
 import { Button } from '../ui/Button'
 import { Input } from '../ui/Input'
 import { Label } from '../ui/Label'
+import { Textarea } from '../ui/Textarea'
 
 interface Props {
   isOpen: boolean
   onClose: () => void
   nextWriteChapter: number | null
   totalChapters: number
-  onConfirm: (startChapter: number, endChapter: number) => void
+  onConfirm: (startChapter: number, endChapter: number, authorGuidance: string) => void
 }
 
 /** 批量写作配置弹框 — 选择写作章数范围 */
@@ -21,6 +22,8 @@ export default function BatchWriteConfigDialog({ isOpen, onClose, nextWriteChapt
   // 默认起始章为未完成的第一章，不可修改
   const startChapter = nextWriteChapter ?? 1
   const [endChapter, setEndChapter] = useState<number | ''>(Math.min(totalChapters, startChapter + 49))
+  // 作者微操指导 — 批量写作时应用到所有章节
+  const [authorGuidance, setAuthorGuidance] = useState('')
 
   const handleConfirm = () => {
     const end = Number(endChapter) || startChapter
@@ -31,9 +34,10 @@ export default function BatchWriteConfigDialog({ isOpen, onClose, nextWriteChapt
       return
     }
 
-    onConfirm(startChapter, finalEnd)
+    onConfirm(startChapter, finalEnd, authorGuidance)
     onClose()
-    toast.info(`✨ 已提交：正在自动编写第 ${startChapter} - ${finalEnd} 章...`)
+    const guidanceInfo = authorGuidance ? '（含作者微操指导）' : ''
+    toast.info(`✨ 已提交：正在自动编写第 ${startChapter} - ${finalEnd} 章${guidanceInfo}...`)
   }
 
   const chapterCount = (() => {
@@ -123,6 +127,33 @@ export default function BatchWriteConfigDialog({ isOpen, onClose, nextWriteChapt
                 第 {startChapter} - {Number(endChapter) || startChapter} 章
               </span>
             </div>
+          </div>
+
+          {/* 作者微操指导 — 批量写作时应用到所有章节 */}
+          <div
+            className="p-3 rounded-lg border"
+            style={{
+              borderColor: 'var(--color-accent)',
+              backgroundColor: 'rgba(var(--accent-rgb, 99 102 241), 0.06)',
+            }}
+          >
+            <Label className="flex items-center gap-1.5 mb-2">
+              <span style={{ color: 'var(--color-text)' }}>作者微操指导</span>
+              <span
+                className="text-[0.7rem] font-normal"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                （写稿时会作为最高优先级注入 AI）
+              </span>
+            </Label>
+            <Textarea
+              value={authorGuidance}
+              onChange={(e) => setAuthorGuidance(e.target.value)}
+              placeholder="特殊要求：整体风格、节奏把控、某个细节处理方式..."
+              rows={3}
+              className="text-sm"
+              style={{ resize: 'none' }}
+            />
           </div>
         </div>
 
