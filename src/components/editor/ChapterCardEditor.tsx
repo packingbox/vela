@@ -396,6 +396,15 @@ export default function ChapterCardEditor() {
           addLog('info', `🔒 已关闭第${bp.chapterNumber}章相关页面 (${chapterTabs.length}个)`)
         }
         
+        // 保存作者微操指导到蓝图条目（如果章节自身没有指导但批量弹窗有）
+        if (authorGuidance && !bp.userGuidance) {
+          await ipc.invoke('db:blueprint-upsert', {
+            ...bp,
+            userGuidance: authorGuidance,
+          })
+          addLog('info', `📝 已将作者微操指导保存到第${bp.chapterNumber}章蓝图`)
+        }
+        
         // 刷新蓝图状态，更新 nextWriteChapter
         await loadBlueprints()
         

@@ -338,7 +338,7 @@ export function parseAndValidateBlueprints(content: string, startNum: number, en
   const cleanContent = stripThinkingTags(content)
   console.log(`[parseAndValidateBlueprints] 去除思考标签后长度: ${cleanContent.length} 字符`)
 
-  let jsonStr = cleanContent.replace(/```json?\n?/gi, '').replace(/```\n?/g, '').trim()
+  const jsonStr = cleanContent.replace(/```json?\n?/gi, '').replace(/```\n?/g, '').trim()
 
   if (!jsonStr || jsonStr.length === 0) {
     return {
