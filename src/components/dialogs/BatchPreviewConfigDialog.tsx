@@ -19,30 +19,35 @@ interface Props {
 
 /** 批量预览配置弹框 — 选择预览章数范围 */
 export default function BatchPreviewConfigDialog({ isOpen, onClose, nextWriteChapter, totalChapters, onConfirm }: Props) {
-  // 默认起始章为未完成的第一章，不可修改
-  const startChapter = nextWriteChapter ?? 1
-  const [endChapter, setEndChapter] = useState<number | ''>(Math.min(totalChapters, startChapter + 9))
+  // 用户可自由指定起始和结束章节
+  const [startChapter, setStartChapter] = useState<number | ''>(nextWriteChapter ?? 1)
+  const [endChapter, setEndChapter] = useState<number | ''>(Math.min(totalChapters, (nextWriteChapter ?? 1) + 9))
   // 作者微操指导 — 批量预览时应用到所有章节
   const [authorGuidance, setAuthorGuidance] = useState('')
 
   const handleConfirm = () => {
-    const end = Number(endChapter) || startChapter
-    const finalEnd = Math.max(startChapter, Math.min(end, totalChapters))
+    const start = Number(startChapter) || 1
+    const end = Number(endChapter) || totalChapters
+    const finalStart = Math.max(1, Math.min(start, totalChapters))
+    const finalEnd = Math.max(finalStart, Math.min(end, totalChapters))
     
-    if (finalEnd < startChapter) {
+    if (finalEnd < finalStart) {
       toast.warning('结束章节不能小于起始章节')
       return
     }
 
-    onConfirm(startChapter, finalEnd, authorGuidance)
+    onConfirm(finalStart, finalEnd, authorGuidance)
     onClose()
     const guidanceInfo = authorGuidance ? '（含作者微操指导）' : ''
-    toast.info(`✨ 已提交：正在批量预览第 ${startChapter} - ${finalEnd} 章${guidanceInfo}...`)
+    toast.info(`✨ 已提交：正在批量预览第 ${finalStart} - ${finalEnd} 章${guidanceInfo}...`)
   }
 
   const chapterCount = (() => {
-    const end = Number(endChapter) || startChapter
-    return Math.max(1, Math.min(end, totalChapters) - startChapter + 1)
+    const start = Number(startChapter) || 1
+    const end = Number(endChapter) || totalChapters
+    const finalStart = Math.max(1, Math.min(start, totalChapters))
+    const finalEnd = Math.max(finalStart, Math.min(end, totalChapters))
+    return finalEnd - finalStart + 1
   })()
 
   return (
@@ -68,25 +73,28 @@ export default function BatchPreviewConfigDialog({ isOpen, onClose, nextWriteCha
                 <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
                   指定预览：第
                 </span>
-                {/* 起始章 - 灰色不可修改 */}
+                {/* 起始章 - 用户可自由修改 */}
                 <Input
                   type="number"
                   value={startChapter}
-                  onChange={() => {}}
+                  onChange={e => setStartChapter(e.target.value === '' ? '' : parseInt(e.target.value))}
+                  onBlur={() => {
+                    const v = Number(startChapter)
+                    if (!v || v < 1) setStartChapter(1)
+                    else if (v > totalChapters) setStartChapter(totalChapters)
+                  }}
                   className="w-16 h-6 text-xs px-2 py-0"
                   style={{ 
                     backgroundColor: 'var(--color-panel)',
-                    color: 'var(--color-text-muted)',
-                    cursor: 'not-allowed',
+                    color: 'var(--color-text)',
                     borderColor: 'var(--color-border)'
                   }}
-                  readOnly
+                  onClick={e => e.stopPropagation()}
+                  min={1}
+                  max={totalChapters}
                 />
-                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                  章（未完成的第一章）
-                </span>
                 <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                  到 第
+                  章 到 第
                 </span>
                 {/* 结束章 - 可修改 */}
                 <Input
@@ -94,18 +102,22 @@ export default function BatchPreviewConfigDialog({ isOpen, onClose, nextWriteCha
                   value={endChapter}
                   onChange={e => setEndChapter(e.target.value === '' ? '' : parseInt(e.target.value))}
                   onBlur={() => {
+                    const start = Number(startChapter) || 1
                     const v = Number(endChapter)
-                    if (!v || v < startChapter) setEndChapter(startChapter)
+                    if (!v || v < start) setEndChapter(start)
                     else if (v > totalChapters) setEndChapter(totalChapters)
                   }}
                   className="w-16 h-6 text-xs px-2 py-0"
                   onClick={e => e.stopPropagation()}
-                  min={startChapter}
+                  min={1}
                   max={totalChapters}
                 />
                 <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
                   章
                 </span>
+              </div>
+              <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                提示：范围不能超过实际章节总量（共 {totalChapters} 章）
               </div>
             </div>
           </div>
@@ -124,7 +136,7 @@ export default function BatchPreviewConfigDialog({ isOpen, onClose, nextWriteCha
             <div className="flex items-center justify-between text-xs mt-2">
               <span style={{ color: 'var(--color-text-muted)' }}>范围</span>
               <span style={{ color: 'var(--color-text-secondary)' }}>
-                第 {startChapter} - {Number(endChapter) || startChapter} 章
+                第 {Number(startChapter) || 1} - {Number(endChapter) || totalChapters} 章
               </span>
             </div>
           </div>
