@@ -5,14 +5,32 @@
 import { FolderOpen } from 'lucide-react'
 import { useProjectStore } from '../../../stores/project-store'
 import { useLayoutStore } from '../../../stores/layout-store'
+import { useEditorStore } from '../../../stores/editor-store'
 import { ipc } from '../../../services/ipc-client'
 import { Button } from '../../ui/Button'
+import { confirm } from '../../ui/Confirm'
 
 export default function HomeSidebarPanel() {
   const currentProject = useProjectStore(s => s.currentProject)
   const recentProjects = useProjectStore(s => s.recentProjects)
   const openProject = useProjectStore(s => s.openProject)
   const closeProject = useProjectStore(s => s.closeProject)
+
+  /** 关闭当前项目 — 带未保存修改检查 */
+  const handleCloseProject = async () => {
+    const { tabs } = useEditorStore.getState()
+    const dirtyTabs = tabs.filter((t: { dirty?: boolean }) => t.dirty)
+    if (dirtyTabs.length > 0) {
+      const names = dirtyTabs.map((t: { name: string }) => t.name).join('、')
+      const ok = await confirm(
+        `以下文件有未保存的修改：\n${names}\n\n确定要关闭项目吗？未保存的内容将丢失。`,
+        { title: '关闭项目', confirmText: '放弃并关闭', danger: true }
+      )
+      if (!ok) return
+    }
+    useEditorStore.getState().clearTabs()
+    closeProject()
+  }
 
   return (
     <div className="px-3 py-2 text-sm">
@@ -64,9 +82,7 @@ export default function HomeSidebarPanel() {
           <Button
             variant="outline"
             className="w-full"
-            onClick={() => {
-              closeProject()
-            }}
+            onClick={handleCloseProject}
           >
             关闭当前项目
           </Button>
