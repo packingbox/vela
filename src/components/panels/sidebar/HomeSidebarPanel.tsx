@@ -28,7 +28,6 @@ export default function HomeSidebarPanel() {
       )
       if (!ok) return
     }
-    useEditorStore.getState().clearTabs()
     closeProject()
   }
 
