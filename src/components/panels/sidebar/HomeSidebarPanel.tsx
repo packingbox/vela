@@ -12,6 +12,7 @@ export default function HomeSidebarPanel() {
   const currentProject = useProjectStore(s => s.currentProject)
   const recentProjects = useProjectStore(s => s.recentProjects)
   const openProject = useProjectStore(s => s.openProject)
+  const closeProject = useProjectStore(s => s.closeProject)
 
   return (
     <div className="px-3 py-2 text-sm">
@@ -59,6 +60,17 @@ export default function HomeSidebarPanel() {
         >
           打开项目
         </Button>
+        {currentProject && (
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => {
+              closeProject()
+            }}
+          >
+            关闭当前项目
+          </Button>
+        )}
       </div>
 
       {/* 最近项目列表 */}
